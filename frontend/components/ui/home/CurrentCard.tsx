@@ -1,5 +1,8 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import {
+  View, Text, StyleSheet, Image, TouchableOpacity,
+  Animated, ActivityIndicator,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
@@ -7,29 +10,47 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import dayjs from 'dayjs';
 import 'dayjs/locale/en';
 import { Ionicons } from '@expo/vector-icons';
-import { API_URL } from '@/api.js'; // ตรวจสอบ path นี้ให้ถูกต้อง
+import { API_URL } from '@/api.js';
 
 dayjs.locale('en');
+
+// ─── Japanese Palette ─────────────────────────────────────────────────────────
+const BENI         = '#C0392B';
+const BENI_LIGHT   = '#E74C3C';
+const KINCHA       = '#B8963E';
+const KINCHA_LIGHT = '#D4AF55';
+const SUMI         = '#1C1410';
+const WASHI        = '#FAF5EC';
+const WASHI_DARK   = '#EDE5D8';
+const INK_60       = 'rgba(28,20,16,0.6)';
+const INK_20       = 'rgba(28,20,16,0.12)';
+const WHITE        = '#FFFFFF';
 
 type Trip = {
   plan_id: number;
   name_group: string;
   start_plan_date: string;
   end_plan_date: string;
-  tripGroup?: {
-    members: any[];
-  } | null;
+  tripGroup?: { members: any[] } | null;
   image?: string;
+};
+
+type TripStatus = 'On Trip' | 'Upcoming' | 'Ended';
+
+const STATUS_CONFIG: Record<TripStatus, { color: string; bg: string; border: string; icon: string; kanji: string }> = {
+  'On Trip':  { color: KINCHA_LIGHT, bg: 'rgba(184,150,62,0.12)', border: KINCHA,     icon: 'airplane',        kanji: '旅中' },
+  'Upcoming': { color: BENI,         bg: 'rgba(192,57,43,0.08)',  border: BENI,        icon: 'time-outline',    kanji: '予定' },
+  'Ended':    { color: INK_60,       bg: INK_20,                  border: INK_20,      icon: 'checkmark-circle',kanji: '完'   },
 };
 
 export default function CurrentCard() {
   const router = useRouter();
   const [currentTrip, setCurrentTrip] = useState<Trip | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [hasAnyTrip, setHasAnyTrip] = useState(false); // เช็คว่าเคยมีทริปบ้างไหม
-  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading]         = useState(true);
+  const [user, setUser]               = useState<any>(null);
 
-  // โหลดข้อมูลทุกครั้งที่หน้าจอถูก Focus (เช่น กลับมาจากหน้าอื่น)
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
   useFocusEffect(
     useCallback(() => {
       fetchCurrentTrip();
@@ -39,372 +60,432 @@ export default function CurrentCard() {
   const fetchCurrentTrip = async () => {
     try {
       const token = await AsyncStorage.getItem('access_token');
-      if (!token) {
-        setLoading(false);
-        return;
-      }
+      if (!token) { setLoading(false); return; }
 
-      const res = await axios.get(`${API_URL}/trip_plan`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const [tripRes, userRes] = await Promise.all([
+        axios.get(`${API_URL}/trip_plan`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_URL}/user`,      { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      setUser(userRes.data);
 
-      const res_user = await axios.get(`${API_URL}/user`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setUser(res_user.data);
-
-      
-
-      if (Array.isArray(res.data) && res.data.length > 0) {
-        setHasAnyTrip(true);
-        const trips = res.data;
-        const now = dayjs();
+      if (Array.isArray(tripRes.data) && tripRes.data.length > 0) {
+        const trips = tripRes.data;
+        const now   = dayjs();
 
         const onTrip = trips.find((t: Trip) => {
-          const start = dayjs(t.start_plan_date);
-          const end = dayjs(t.end_plan_date);
-          return (now.isSame(start, 'day') || now.isAfter(start, 'day')) && 
-                 (now.isSame(end, 'day') || now.isBefore(end, 'day'));
+          const s = dayjs(t.start_plan_date), e = dayjs(t.end_plan_date);
+          return (now.isSame(s, 'day') || now.isAfter(s, 'day')) &&
+                 (now.isSame(e, 'day') || now.isBefore(e, 'day'));
         });
 
         if (onTrip) {
           setCurrentTrip(onTrip);
         } else {
-
-          const upcomingTrips = trips
+          const upcoming = trips
             .filter((t: Trip) => dayjs(t.start_plan_date).isAfter(now, 'day'))
-            .sort((a: Trip, b: Trip) => dayjs(a.start_plan_date).diff(dayjs(b.start_plan_date))); // เรียงจาก ใกล้ -> ไกล
-
-          if (upcomingTrips.length > 0) {
-            setCurrentTrip(upcomingTrips[0]); // เอาอันที่ใกล้ที่สุด
+            .sort((a: Trip, b: Trip) => dayjs(a.start_plan_date).diff(dayjs(b.start_plan_date)));
+          if (upcoming.length > 0) {
+            setCurrentTrip(upcoming[0]);
           } else {
-
-            const endedTrips = trips
+            const ended = trips
               .filter((t: Trip) => dayjs(t.end_plan_date).isBefore(now, 'day'))
-              .sort((a: Trip, b: Trip) => dayjs(b.end_plan_date).diff(dayjs(a.end_plan_date))); // เรียงจาก จบล่าสุด -> จบนานแล้ว
-
-            if (endedTrips.length > 0) {
-              setCurrentTrip(endedTrips[0]); // เอาอันที่จบล่าสุด
-            } else {
-              setCurrentTrip(null); // ไม่มีทริปเลย
-            }
+              .sort((a: Trip, b: Trip) => dayjs(b.end_plan_date).diff(dayjs(a.end_plan_date)));
+            setCurrentTrip(ended.length > 0 ? ended[0] : null);
           }
         }
-
       } else {
-        setHasAnyTrip(false);
         setCurrentTrip(null);
       }
-    } catch (error) {
-      console.log("Error fetching trips:", error);
+    } catch (e) {
+      console.log('Error fetching trips:', e);
     } finally {
       setLoading(false);
+      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     }
   };
 
-  const handleCreateTrip = () => {
-    router.push('/trip/after-create'); // เปลี่ยน path ตามหน้าสร้างทริปของคุณ
+  const getStatus = (): TripStatus => {
+    if (!currentTrip) return 'Upcoming';
+    const now = dayjs(), s = dayjs(currentTrip.start_plan_date), e = dayjs(currentTrip.end_plan_date);
+    if (now.isBefore(s, 'day')) return 'Upcoming';
+    if (now.isAfter(e,  'day')) return 'Ended';
+    return 'On Trip';
   };
 
-  const handleJoinTrip = () => {
-    router.push('/(modals)/join-trip'); // เปลี่ยน path ตามหน้า Join
-  };
+  const formatDate = (start: string, end: string) =>
+    `${dayjs(start).format('D MMM')} – ${dayjs(end).format('D MMM YYYY')}`;
 
-  const handleLogin = () => {
-    router.push('/(modals)/Login'); // เปลี่ยน path ตามหน้าล็อกอินของคุณ
-  }
+  const memberCount = currentTrip?.tripGroup?.members?.length ?? 1;
 
-  const handlePressCard = () => {
-    if (currentTrip) {
-      router.push(`/trip/${currentTrip.plan_id}`);
-    }
-  };
-
-  const formatDate = (start: string, end: string) => {
-    const s = dayjs(start);
-    const e = dayjs(end);
-    return `${s.format('D MMM')} - ${e.format('D MMM YYYY')}`;
-  };
-
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[styles.card, styles.centerContent]}>
-        <ActivityIndicator color="#FFB7C5" />
+      <View style={[s.card, s.centerCard]}>
+        <ActivityIndicator color={BENI} size="small" />
       </View>
     );
   }
 
-  if(!user){
-    return(
-    <View style={[styles.card, styles.emptyCard]}>
-      <Text style={styles.emptyTitlelogin}>กรุณาเข้าสู่ระบบเพื่อใช้งาน</Text>
-
-      <TouchableOpacity style={styles.sakuraButton} onPress={handleLogin}>
-        <Ionicons name="log-in-outline" size={20} color="white" />
-        <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>
-      </TouchableOpacity>
-    </View>
+  // ── Not logged in ──────────────────────────────────────────────────────────
+  if (!user) {
+    return (
+      <Animated.View style={[s.card, s.emptyCard, { opacity: fadeAnim }]}>
+        <View style={s.emptyIconRing}>
+          <Ionicons name="person-outline" size={28} color={BENI} />
+        </View>
+        <Text style={s.emptyTitle}>Sign in to continue</Text>
+        <Text style={s.emptySub}>Log in to view your trips</Text>
+        <TouchableOpacity style={s.primaryBtn} onPress={() => router.push('/(modals)/Login')}>
+          <Ionicons name="log-in-outline" size={16} color={WHITE} />
+          <Text style={s.primaryBtnText}>Log In</Text>
+        </TouchableOpacity>
+      </Animated.View>
     );
-
   }
 
-  // กรณีไม่มีทริปเลย (หรือไม่มี OnTrip/Ended)
+  // ── No trip ────────────────────────────────────────────────────────────────
   if (!currentTrip) {
     return (
-      <View style={[styles.card, styles.emptyCard]}>
-        <Text style={styles.emptyTitle}>ยังไม่มีการเดินทางเร็วๆ นี้</Text>
-        <Text style={styles.emptySubtitle}>สร้างทริปใหม่ หรือเข้าร่วมกับเพื่อนได้เลย!</Text>
-        
-        <View style={styles.buttonGroup}>
-          <TouchableOpacity style={styles.sakuraButton} onPress={handleCreateTrip}>
-            <Ionicons name="add-circle-outline" size={20} color="white" />
-            <Text style={styles.buttonText}>Create Trip</Text>
+      <Animated.View style={[s.card, s.emptyCard, { opacity: fadeAnim }]}>
+        <Text style={s.emptyKanji}>旅</Text>
+        <View style={s.emptyIconRing}>
+          <Ionicons name="map-outline" size={28} color={BENI} />
+        </View>
+        <Text style={s.emptyTitle}>No upcoming trips</Text>
+        <Text style={s.emptySub}>Create a trip or join with friends</Text>
+        <View style={s.btnRow}>
+          <TouchableOpacity style={s.primaryBtn} onPress={() => router.push('/trip/after-create')}>
+            <Ionicons name="add-circle-outline" size={15} color={WHITE} />
+            <Text style={s.primaryBtnText}>Create</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.sakuraButton, styles.joinButton]} onPress={handleJoinTrip}>
-            <Ionicons name="people-outline" size={20} color="#FF99AC" />
-            <Text style={[styles.buttonText, styles.joinButtonText]}>Join</Text>
+          <TouchableOpacity style={s.outlineBtn} onPress={() => router.push('/(modals)/join-trip')}>
+            <Ionicons name="people-outline" size={15} color={BENI} />
+            <Text style={s.outlineBtnText}>Join</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
     );
   }
 
-  const isEnded = dayjs().isAfter(dayjs(currentTrip.end_plan_date).add(1, 'day'));
-
-  const getTripStatusLabel = () => {
-    if (!currentTrip) return "";
-    
-    const now = dayjs();
-    const start = dayjs(currentTrip.start_plan_date);
-    const end = dayjs(currentTrip.end_plan_date);
-
-    if (now.isBefore(start, 'day')) {
-        return (
-
-            <Text style={[styles.statusUpcoming, styles.statusText]}>
-                Upcoming
-            </Text>      
-        ); // Upcoming
-    } else if (now.isAfter(end, 'day')) {
-        return (
-        <Text style={[styles.statusEnded, styles.statusText]}>
-                Ended
-        </Text>
-        ); // Ended
-    } else {
-        return (
-        <Text style={[styles.statusActive, styles.statusText]}>
-                On Trip
-        </Text>
-        );
-    }
-  };
+  // ── Has trip ───────────────────────────────────────────────────────────────
+  const status = getStatus();
+  const cfg    = STATUS_CONFIG[status];
+  const isEnded = status === 'Ended';
 
   return (
-    <View style={styles.card}>
-      <View style={styles.headerRow}>
-        <Text style={styles.cardHeader}>Current Trip</Text>
-        
+    <Animated.View style={[s.card, { opacity: fadeAnim }]}>
+      {/* Beni top bar */}
+      <View style={s.topBar} />
 
-        <View style={styles.rightHeader}>
+      <View style={s.inner}>
+        {/* Header row */}
+        <View style={s.headerRow}>
+          <View style={s.headerLeft}>
+            <View style={s.headerBar} />
+            <Text style={s.headerTitle}>Current Trip</Text>
+          </View>
 
-              {getTripStatusLabel()}
- 
+          <View style={s.headerRight}>
+            {/* Status badge */}
+            <View style={[s.statusBadge, { backgroundColor: cfg.bg, borderColor: cfg.border + '55' }]}>
+              <Ionicons name={cfg.icon as any} size={10} color={cfg.color} />
+              <Text style={[s.statusText, { color: cfg.color }]}>{status}</Text>
+              <Text style={[s.statusKanji, { color: cfg.color }]}>{cfg.kanji}</Text>
+            </View>
+
+            {/* New trip button when ended */}
             {isEnded && (
-            <TouchableOpacity style={styles.smallSakuraBtn} onPress={handleCreateTrip}>
-                <Text style={styles.smallSakuraText}>+ New Trip</Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={s.newTripBtn} onPress={() => router.push('/trip/after-create')}>
+                <Ionicons name="add" size={11} color={BENI} />
+                <Text style={s.newTripText}>New Trip</Text>
+              </TouchableOpacity>
             )}
+          </View>
         </View>
-      </View>
 
-      <TouchableOpacity style={styles.info} onPress={handlePressCard} activeOpacity={0.8}>
-        <Image
-          source={{ uri: currentTrip.image }}
-          style={styles.cardImage}
-        />
-        <View style={styles.textContainer}>
-          <Text style={styles.tripTitle} numberOfLines={1}>{currentTrip.name_group}</Text>
-          <View style={styles.detailRow}>
-            <Ionicons name="calendar-outline" size={14} color="#666" />
-            <Text style={styles.detailText}>
-              {formatDate(currentTrip.start_plan_date, currentTrip.end_plan_date)}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="person-outline" size={14} color="#666" />
-            <Text style={styles.detailText}>
-              {currentTrip.tripGroup?.members && currentTrip.tripGroup.members.length > 0 
-                    ? currentTrip.tripGroup.members.length 
-                    : 1} people           
-            </Text>
-          </View>
+        {/* Kincha divider */}
+        <View style={s.divider}>
+          <View style={s.dividerLine} />
+          <Text style={s.dividerDot}>✦</Text>
+          <View style={s.dividerLine} />
         </View>
-      </TouchableOpacity>
-    </View>
+
+        {/* Trip info */}
+        <TouchableOpacity
+          style={s.tripRow}
+          onPress={() => router.push(`/trip/${currentTrip.plan_id}`)}
+          activeOpacity={0.78}
+        >
+          <Image
+            source={{ uri: currentTrip.image || `https://picsum.photos/seed/${currentTrip.plan_id}/300/200` }}
+            style={s.tripImg}
+          />
+
+          <View style={s.tripDetails}>
+            <Text style={s.tripName} numberOfLines={1}>{currentTrip.name_group}</Text>
+
+            <View style={s.detailRow}>
+              <View style={s.detailIcon}>
+                <Ionicons name="calendar-outline" size={12} color={BENI} />
+              </View>
+              <Text style={s.detailText}>
+                {formatDate(currentTrip.start_plan_date, currentTrip.end_plan_date)}
+              </Text>
+            </View>
+
+            <View style={s.detailRow}>
+              <View style={s.detailIcon}>
+                <Ionicons name="people-outline" size={12} color={BENI} />
+              </View>
+              <Text style={s.detailText}>{memberCount} {memberCount === 1 ? 'person' : 'people'}</Text>
+            </View>
+
+            <View style={s.detailRow}>
+              <View style={s.detailIcon}>
+                <Ionicons name="chevron-forward" size={12} color={KINCHA} />
+              </View>
+              <Text style={[s.detailText, { color: KINCHA }]}>View trip</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   card: {
-    backgroundColor: '#fff',
-    width: '90%', // ปรับความกว้างให้เหมาะสม
+    width: '92%',
     alignSelf: 'center',
-    padding: 14,
-    borderRadius: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    backgroundColor: WASHI,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: WASHI_DARK,
+    shadowColor: SUMI,
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
-    marginBottom: 20,
-    marginTop: 10,
+    elevation: 5,
+    marginBottom: 18,
+    marginTop: 12,
   },
-  centerContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: 150,
+  topBar: {
+    height: 3,
+    backgroundColor: BENI,
   },
+  inner: {
+    padding: 14,
+  },
+
+  // ── Header ──
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  cardHeader: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  rightHeader: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-   
+    gap: 7,
+  },
+  headerBar: {
+    width: 3,
+    height: 16,
+    backgroundColor: BENI,
+    borderRadius: 2,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: SUMI,
+    letterSpacing: 0.3,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 3,
+    borderWidth: 0.8,
   },
   statusText: {
-    fontSize: 12,
-    color: "#ffffffff",
-    fontWeight: '600',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
   },
-  statusActive: {
-    backgroundColor: '#51e169ff', // Lavender Blush (สีพื้นอ่อนๆ)
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#57de6eff',
+  statusKanji: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    opacity: 0.7,
   },
-  statusUpcoming:{
-    backgroundColor: '#f88c40ff', // Lavender Blush (สีพื้นอ่อนๆ)
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#f38f2cff',
-    
-  },
-  statusEnded: {
-    color: '#888',
-  },
-  info: {
+  newTripBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 3,
+    borderWidth: 1,
+    borderColor: BENI,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 3,
+    backgroundColor: 'rgba(192,57,43,0.05)',
+  },
+  newTripText: {
+    fontSize: 9,
+    color: BENI,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+
+  // ── Divider ──
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  dividerLine: { flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.3 },
+  dividerDot:  { fontSize: 7, color: KINCHA, marginHorizontal: 6, opacity: 0.45 },
+
+  // ── Trip row ──
+  tripRow: {
+    flexDirection: 'row',
     gap: 12,
+    alignItems: 'center',
   },
-  cardImage: {
-    width: 130,
-    height: 100,
-    borderRadius: 12,
-    backgroundColor: '#eee',
+  tripImg: {
+    width: 120,
+    height: 90,
+    borderRadius: 6,
+    backgroundColor: WASHI_DARK,
   },
-  textContainer: {
+  tripDetails: {
     flex: 1,
+    gap: 6,
     justifyContent: 'center',
-    gap: 4,
   },
-  tripTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111',
-    marginBottom: 4,
+  tripName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: SUMI,
+    letterSpacing: 0.2,
+    marginBottom: 2,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
+  },
+  detailIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(192,57,43,0.07)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   detailText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  
-  // Styles สำหรับปุ่ม Sakura
-  smallSakuraBtn: {
-    backgroundColor: '#FFF0F5', // Lavender Blush (สีพื้นอ่อนๆ)
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FFB7C5',
-  },
-  smallSakuraText: {
     fontSize: 12,
-    color: '#FF69B4', // Hot Pink
-    fontWeight: '600',
+    color: INK_60,
+    fontWeight: '500',
   },
 
-  // Styles สำหรับ Empty State
+  // ── Empty / Guest states ──
+  centerCard: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 120,
+  },
   emptyCard: {
     alignItems: 'center',
-    paddingVertical: 24,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  emptyTitlelogin:{
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#888',
-    marginBottom: 16,
-  },
-  buttonGroup: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  sakuraButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFB7C5', // Sakura Pink
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 20,
-    gap: 6,
-    shadowColor: "#FFB7C5",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  joinButton: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#FFB7C5',
+  emptyKanji: {
+    position: 'absolute',
+    fontSize: 90,
+    color: INK_20,
+    fontWeight: '900',
+    top: 10,
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
+  emptyIconRing: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    borderColor: BENI,
+    backgroundColor: 'rgba(192,57,43,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    shadowColor: BENI,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
-  joinButtonText: {
-    color: '#FF99AC',
-  }
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: SUMI,
+    marginBottom: 5,
+    letterSpacing: 0.2,
+  },
+  emptySub: {
+    fontSize: 12,
+    color: INK_60,
+    marginBottom: 18,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: BENI,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 5,
+    shadowColor: BENI,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  primaryBtnText: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  outlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1.2,
+    borderColor: BENI,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(192,57,43,0.04)',
+  },
+  outlineBtnText: {
+    color: BENI,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
 });

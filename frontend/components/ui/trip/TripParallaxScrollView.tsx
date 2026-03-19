@@ -8,20 +8,21 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useBottomTabOverflow } from '@/components/ui/TabBarBackground';
 
+// ─── Palette ──────────────────────────────────────────────────────────────────
+const WASHI      = '#FAF5EC';
 const WASHI_DARK = '#EDE5D8';
 const SUMI       = '#1C1410';
 
 type Props = PropsWithChildren<{
   headerImage: ReactElement;
-  headerBackgroundColor: { dark: string; light: string };
+  headerBackgroundColor?: { dark: string; light: string };
   headerHeight?: number;
 }>;
 
-export default function ParallaxScrollView({
+export default function TripParallaxScrollView({
   children,
-  headerImage,
-  headerBackgroundColor,
   headerHeight = 300,
+  headerImage,
 }: Props) {
   const scrollRef    = useAnimatedRef<Animated.ScrollView>();
   const scrollOffset = useScrollViewOffset(scrollRef);
@@ -57,19 +58,12 @@ export default function ParallaxScrollView({
       >
         {/* ── Parallax header ── */}
         <Animated.View
-          style={[
-            {
-              height: headerHeight,
-              backgroundColor: SUMI,
-              overflow: 'hidden',
-            },
-            headerAnimatedStyle,
-          ]}
+          style={[{ height: headerHeight, backgroundColor: SUMI, overflow: 'hidden' }, headerAnimatedStyle]}
         >
           {headerImage}
         </Animated.View>
 
-        {/* ── Body — no padding, no ThemedView ── */}
+        {/* ── Body ── */}
         <Animated.View style={s.content}>
           {children}
         </Animated.View>
@@ -81,12 +75,11 @@ export default function ParallaxScrollView({
 const s = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: SUMI,  // ป้องกันขอบขาวระหว่าง header กับ body
+    backgroundColor: WASHI,   // ← Washi cream แทน Sumi ดำ
   },
   content: {
     flex: 1,
-    backgroundColor: WASHI_DARK,  // ธีม Washi cream เหมือนทุกหน้า
+    backgroundColor: WASHI,   // ← เนื้อหาด้านในก็ Washi เหมือนกัน
     overflow: 'hidden',
-    // ไม่มี padding — แต่ละ section จัดการ padding เอง
   },
 });

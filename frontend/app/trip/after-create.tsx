@@ -1,180 +1,102 @@
-// app/trip/ai-create.tsx
+// app/trip/after-create.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image, FlatList, Modal, Pressable,
-  Animated
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  Image, FlatList, Modal, Pressable, ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { API_URL } from '@/api.js'
+import { API_URL } from '@/api.js';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import LottieView from 'lottie-react-native';
-import ApproveAnimation from '@/components/ui/Alert/ApproveAnimation'; // แก้ path ให้ตรงกับที่คุณเซฟไว้
+import ApproveAnimation from '@/components/ui/Alert/ApproveAnimation';
 import WrongAnimation from '@/components/ui/Alert/WrongAnimation';
-import { LinearGradient } from 'expo-linear-gradient';
 
+// ─── Original Japanese Palette (Elegant) ──────────────────────────────────────
+const SUMI         = '#1C1410';   // Deep ink black
+const BENI         = '#C0392B';   // Classic vermillion
+const WASHI        = '#FAF5EC';   // Paper cream
+const WASHI_DARK   = '#EDE5D8';   // Darker paper
+const KINCHA       = '#B8963E';   // Elegant gold
+const KINCHA_LIGHT = '#D4AF55';
+const WHITE        = '#FFFFFF';
+const INK_60       = 'rgba(28,20,16,0.6)';
+const INK_30       = 'rgba(28,20,16,0.3)';
+const INK_12       = 'rgba(28,20,16,0.12)';
 
-type LLMResponse = {
-  itinerary: Array<{
-    date: string; // 'YYYY-MM-DD'
-    day: string;
-    schedule: Array<{ time: string; activity: string; lat?: number; lng?: number }>;
-  }>;
-  comments?: string;
-};
+// ─── Types ────────────────────────────────────────────────────────────────────
+type City = { id: number; name: string };
 
-type TripScheduleIn = {
-  plan_id: number;
-  date: string;     // 'YYYY-MM-DD'
-  time: string;     // 'HH:mm:ss'
-  activity: string;
-  description: string;
-};
+const CLOUD_NAME    = 'dqghrasqe';
+const UPLOAD_PRESET = 'TabiGo';
 
-const CLOUD_NAME = "dqghrasqe"; 
-const UPLOAD_PRESET = "TabiGo";
-
-type City = {
-  id: number;
-  name: string;
-};
-
-
-const toDDMMYYYY_fromDate = (d: Date) => {
+const toDDMMYYYY = (d: Date) => {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  return `${dd}/${mm}/${d.getFullYear()}`;
 };
-
 const toYMD = (d: Date) => {
-  const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`; // e.g. "2025-08-14"
+  return `${d.getFullYear()}-${m}-${day}`;
 };
 
+// ─── Elegant Helpers ─────────────────────────────────────────────────────────
+// Modern section header with a smooth Kincha (Gold) pill
+const SectionHeader = ({ label }: { label: string }) => (
+  <View style={s.sectionHeader}>
+    <View style={s.sectionBar} />
+    <Text style={s.sectionLabel}>{label}</Text>
+  </View>
+);
+
+// The elegant gold divider from your original theme
+const WashiDivider = () => (
+  <View style={s.dividerRow}>
+    <View style={s.dividerLine} />
+    <Text style={s.dividerDot}>✦</Text>
+    <View style={s.dividerLine} />
+  </View>
+);
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function AICreateTrip() {
   const router = useRouter();
 
-  const [tripName, setTripName] = useState('');
-  const [cities, setCities] = useState<City[]>([]);
+  const [tripName, setTripName]           = useState('');
+  const [cities, setCities]               = useState<City[]>([]);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
-  const [triprequest, setTripRequest] = useState('');
-
+  const [triprequest, setTripRequest]     = useState('');
   const [cityModalVisible, setCityModalVisible] = useState(false);
-  const [citySearch, setCitySearch] = useState(''); 
+  const [citySearch, setCitySearch]       = useState('');
   const [loadingCities, setLoadingCities] = useState(false);
-
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageUri, setImageUri]           = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  const today = new Date(); today.setHours(0,0,0,0);
-  const [startDate, setStartDate] = useState<Date>(today);
-  const [endDate, setEndDate] = useState<Date>(today);
-  const [picker, setPicker] = useState<{ show: boolean; mode: 'start' | 'end' }>({ show: false, mode: 'start' });
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const [startDate, setStartDate]         = useState<Date>(today);
+  const [endDate, setEndDate]             = useState<Date>(today);
+  const [picker, setPicker]               = useState<{ show: boolean; mode: 'start' | 'end' }>({ show: false, mode: 'start' });
 
-  const [loading, setLoading] = useState(false);
-  const [alertConfig, setAlertConfig] = useState({
-    visible: false,
-    title: '',
-    message: '',
-    isSuccess: false,
-    onConfirm: () => {}, 
+  const [loading, setLoading]             = useState(false);
+  const [alertConfig, setAlertConfig]     = useState({
+    visible: false, title: '', message: '', isSuccess: false, onConfirm: () => {},
   });
 
-  const showCustomAlert = (title: string, message: string, isSuccess = false, onConfirm = () => {}) => {
+  const [focusedField, setFocusedField]   = useState<string | null>(null);
+
+  const showCustomAlert = (title: string, message: string, isSuccess = false, onConfirm = () => {}) =>
     setAlertConfig({ visible: true, title, message, isSuccess, onConfirm });
-  };
 
   const closeAlert = () => {
-    setAlertConfig(prev => ({ ...prev, visible: false }));
-    alertConfig.onConfirm();
+    const cb = alertConfig.onConfirm;
+    setAlertConfig(p => ({ ...p, visible: false }));
+    cb();
   };
-
-  const openPicker = (mode: 'start' | 'end') => setPicker({ show: true, mode });
-
-
-  const onChangeDate = (_: any, selected?: Date) => {
-    setPicker(p => ({ ...p, show: false }));
-    if (!selected) return;
-    const picked = new Date(selected); picked.setHours(0,0,0,0);
-
-    if (picked < today) {
-      Alert.alert('Cannot select a past date');
-      return;
-    }
-    if (picker.mode === 'start') {
-      setStartDate(picked);
-      if (picked > endDate) setEndDate(picked);
-    } else {
-      if (picked < startDate) {
-        Alert.alert('End date cannot be before start date');
-        return;
-      }
-      setEndDate(picked);
-    }
-  };
-
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow access to your photos');
-      return;
-    }
-
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'images',
-      allowsEditing: true,
-      aspect: [16, 9],
-      quality: 0.7,
-    });
-
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
-    }
-  };
-
-  const uploadToCloudinary = async (uri: string) => {
-    const data = new FormData();
-    let filename = uri.split('/').pop();
-    let match = /\.(\w+)$/.exec(filename || '');
-    let type = match ? `image/${match[1]}` : `image`;
-
-    // @ts-ignore
-    data.append('file', { uri: uri, name: filename, type });
-    data.append('upload_preset', UPLOAD_PRESET);
-
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-      method: 'POST',
-      body: data,
-      headers: { 'content-type': 'multipart/form-data' },
-    });
-    
-    const json = await res.json();
-    if (json.error) throw new Error(json.error.message);
-    return json.secure_url;
-  };
-
-
-  const toggleCity = (name: string) => {
-    setSelectedCities(prev =>
-      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
-    );
-  };
-
-  const filteredCities = useMemo(() => {
-    const q = citySearch.trim().toLowerCase();
-    if (!q) return cities;
-    return cities.filter(c => c.name.toLowerCase().includes(q));
-  }, [cities, citySearch]);
-
-
-  const CITIES_ENDPOINT = `${API_URL}/cities`;
 
   useEffect(() => {
     let mounted = true;
@@ -184,19 +106,14 @@ export default function AICreateTrip() {
         const token = await AsyncStorage.getItem('access_token');
         const headers: any = { 'Content-Type': 'application/json' };
         if (token) headers.Authorization = `Bearer ${token}`;
-
-        const res = await axios.get(CITIES_ENDPOINT, { headers, timeout: 15000 });
-        
+        const res = await axios.get(`${API_URL}/cities`, { headers, timeout: 15000 });
         const rows = Array.isArray(res.data) ? res.data : res.data?.items ?? [];
-        const normalized: City[] = rows.map((c: any) => ({
-          id: Number(c.id),
-          name: String(c.name),
-        })).filter((x: City) => Number.isFinite(x.id) && x.name);
-
+        const normalized: City[] = rows
+          .map((c: any) => ({ id: Number(c.id), name: String(c.name) }))
+          .filter((x: City) => Number.isFinite(x.id) && x.name);
         if (mounted) setCities(normalized);
       } catch (e) {
-        console.error('Load cities error:', e);
-        if (mounted) Alert.alert('Load cities error', 'Try again');
+        if (mounted) Alert.alert('Connection Error', 'Failed to load cities.');
       } finally {
         if (mounted) setLoadingCities(false);
       }
@@ -204,227 +121,236 @@ export default function AICreateTrip() {
     return () => { mounted = false; };
   }, []);
 
+  const filteredCities = useMemo(() => {
+    const q = citySearch.trim().toLowerCase();
+    return q ? cities.filter(c => c.name.toLowerCase().includes(q)) : cities;
+  }, [cities, citySearch]);
 
-const onCreateWithAI = async () => {
-  try {
-    if (!tripName.trim()) {
-      showCustomAlert('Oops!', 'Please enter trip name', false);
-      return;
+  const toggleCity = (name: string) =>
+    setSelectedCities(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name]);
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission required', 'Please allow photo access to set a cover.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images', allowsEditing: true, aspect: [16, 9], quality: 0.7,
+    });
+    if (!result.canceled) setImageUri(result.assets[0].uri);
+  };
+
+  const uploadToCloudinary = async (uri: string) => {
+    const data = new FormData();
+    const filename = uri.split('/').pop();
+    const match = /\.(\w+)$/.exec(filename || '');
+    const type = match ? `image/${match[1]}` : 'image';
+    // @ts-ignore
+    data.append('file', { uri, name: filename, type });
+    data.append('upload_preset', UPLOAD_PRESET);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+      method: 'POST', body: data, headers: { 'content-type': 'multipart/form-data' },
+    });
+    const json = await res.json();
+    if (json.error) throw new Error(json.error.message);
+    return json.secure_url;
+  };
+
+  const onChangeDate = (_: any, selected?: Date) => {
+    setPicker(p => ({ ...p, show: false }));
+    if (!selected) return;
+    const picked = new Date(selected); picked.setHours(0, 0, 0, 0);
+    if (picked < today) { Alert.alert('Cannot select a past date'); return; }
+    if (picker.mode === 'start') {
+      setStartDate(picked);
+      if (picked > endDate) setEndDate(picked);
+    } else {
+      if (picked < startDate) { Alert.alert('End date cannot be before start date'); return; }
+      setEndDate(picked);
     }
+  };
 
+  const onCreateWithAI = async () => {
+    if (!tripName.trim()) { showCustomAlert('Missing Details', 'Please enter a name for your trip.', false); return; }
     setLoading(true);
-    const token = await AsyncStorage.getItem('access_token');
-    const headers: any = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    try {
+      const token = await AsyncStorage.getItem('access_token');
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
 
-    let coverImageUrl = null;
+      let coverImageUrl = null;
       if (imageUri) {
         try {
           setUploadingImage(true);
           coverImageUrl = await uploadToCloudinary(imageUri);
-          console.log("Uploaded cover:", coverImageUrl);
-        } catch (imgErr) {
-          console.error("Image upload failed:", imgErr);
-          Alert.alert("Warning", "Image upload failed. Trip will be created without cover.");
+        } catch {
+          Alert.alert('Warning', 'Image upload failed. Continuing without cover photo.');
         } finally {
           setUploadingImage(false);
         }
       }
 
-    const createPayload = {
-      name_group: tripName.trim(),
-      start_plan_date: toYMD(startDate),
-      end_plan_date: toYMD(endDate),
-      image: coverImageUrl,
-    };
-    console.log("SENDING PAYLOAD:", createPayload);
+      const createPayload = {
+        name_group: tripName.trim(),
+        start_plan_date: toYMD(startDate),
+        end_plan_date: toYMD(endDate),
+        image: coverImageUrl,
+      };
+      const llmBody = {
+        start_date: toDDMMYYYY(startDate),
+        end_date: toDDMMYYYY(endDate),
+        cities: selectedCities,
+        text: triprequest,
+      };
 
-    const llmBody = {
-      start_date: toDDMMYYYY_fromDate(startDate),
-      end_date: toDDMMYYYY_fromDate(endDate),
-      cities : selectedCities,
-      text: triprequest,
-    };
+      const llm = await axios.post(`${API_URL}/llm/`, llmBody, { headers });
+      const data: any = typeof llm.data === 'string' ? JSON.parse(llm.data) : llm.data;
 
-    console.log("LLM request body:", llmBody);
+      const created = await axios.post(`${API_URL}/trip_plan`, createPayload, { headers });
+      const planId: number = Number(created.data?.plan_id);
 
-    const llm = await axios.post(`${API_URL}/llm/`, llmBody, {
-      headers,
-    });
+      if (!Number.isFinite(planId)) {
+        Alert.alert('Error', 'Could not create trip. Please try again.');
+        setLoading(false);
+        return;
+      }
 
-    const data: any = typeof llm.data === 'string'
-      ? JSON.parse(llm.data)
-      : llm.data;
+      await axios.post(`${API_URL}/trip_schedule`, { plan_id: planId, payload: data }, { headers });
 
-    const created = await axios.post(
-      `${API_URL}/trip_plan`,createPayload,{ headers }
-    );
-
-    console.log("Created response:", created.data);
-    
-
-    const planId: number = Number(created.data?.plan_id);
-    const tripIdForRoute: string = String(
-      created.data?.trip_id ?? created.data?.plan_id
-    );
-
-    if (!Number.isFinite(planId)) {
-      Alert.alert('Create Trip error', 'Not Found plan_id in response');
-      setLoading(false);
-      return;
-    }
-
-    await axios.post(
-      `${API_URL}/trip_schedule`,
-      {
-        plan_id: planId,
-        payload: data, 
-      },
-      { headers } 
-    );
-
-    showCustomAlert('Success!', 'Your trip is ready! Please check the details and make sure everything looks good.', true, () => {
-      router.push({
-        pathname: "/trip/scheduledetail",
-        params: { 
-          planId: planId,
-          cities: JSON.stringify(selectedCities) 
-        }
+      showCustomAlert('Journey Created', 'Your customized itinerary is ready.', true, () => {
+        router.push({ pathname: '/trip/scheduledetail', params: { planId, cities: JSON.stringify(selectedCities) } });
       });
-    });
-  } catch (e: any) {
-    console.error(
-      'AI create trip error:',
-      e?.response?.data ?? e?.message ?? e
-    );
-    showCustomAlert('Create trip error', 'Please try again', false);
-  } finally {
-    setLoading(false);
-  }
-};
-
+    } catch (e: any) {
+      showCustomAlert('Request Failed', 'Something went wrong while planning.', false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.select({ ios: 'padding', android: undefined })}>
-      <View style={styles.container}>
-        <Text style={styles.title}> Create New Trip </Text>
-
-        <TouchableOpacity onPress={pickImage} style={styles.imagePicker}>
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-            ) : (
-              <View style={styles.imagePlaceholder}>
-                 <Ionicons name="camera-outline" size={32} color="#888" />
-                 <Text style={styles.imagePlaceholderText}>Add Cover Photo</Text>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: WASHI }} behavior={Platform.select({ ios: 'padding', android: undefined })}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={s.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Minimal Premium Header ── */}
+        <View style={s.pageHeader}>
+          <View style={s.pageTopBar} />
+          <View style={s.pageHeaderInner}>
+            <View style={s.pageTitleRow}>
+              <View style={s.pageTitleBar} />
+              <View>
+                <Text style={s.pageTitle}>Create Trip</Text>
+                <Text style={s.pageSub}>Plan your next adventure with AI</Text>
               </View>
-            )}
-            {/* ปุ่มเปลี่ยนรูปเล็กๆ มุมขวา */}
-            {imageUri && (
-                <View style={styles.editIconBadge}>
-                    <Ionicons name="pencil" size={14} color="#fff" />
-                </View>
-            )}
-          </TouchableOpacity>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Trip Name</Text>
-          <TextInput value={tripName} onChangeText={setTripName} placeholder="e.g. Tokyo Autumn" style={styles.input} />
+            </View>
+          </View>
+          <WashiDivider />
         </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Choose City</Text>
+        {/* ── Cover photo ── */}
+        <View style={s.section}>
+          <SectionHeader label="Cover Photo" />
+          <TouchableOpacity onPress={pickImage} style={s.imagePicker} activeOpacity={0.85}>
+            {imageUri ? (
+              <>
+                <Image source={{ uri: imageUri }} style={s.imagePreview} />
+                <View style={s.imageEditBadge}>
+                  <Ionicons name="pencil" size={14} color={SUMI} />
+                </View>
+                <View style={s.imageOverlay} />
+              </>
+            ) : (
+              <View style={s.imagePlaceholder}>
+                <View style={s.cameraRing}>
+                  <Ionicons name="camera-outline" size={26} color={KINCHA} />
+                </View>
+                <Text style={s.imagePlaceholderText}>Upload cover image</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
 
-          {/* ปุ่มเปิด Modal */}
-          <TouchableOpacity style={styles.selectBtn} onPress={() => setCityModalVisible(true)}>
-            <Text style={styles.selectBtnText}>
-              {selectedCities.length > 0 ? selectedCities.join(', ') : 'Select your cities'}
+        <WashiDivider />
+
+        {/* ── Trip name ── */}
+        <View style={s.section}>
+          <SectionHeader label="Trip Name" />
+          <TextInput
+            value={tripName}
+            onChangeText={setTripName}
+            placeholder="e.g. Tokyo Autumn Escape"
+            placeholderTextColor={INK_30}
+            style={[s.input, focusedField === 'name' && s.inputFocused]}
+            onFocus={() => setFocusedField('name')}
+            onBlur={() => setFocusedField(null)}
+            selectionColor={BENI}
+          />
+        </View>
+
+        {/* ── Cities ── */}
+        <View style={s.section}>
+          <SectionHeader label="Destinations" />
+          <TouchableOpacity
+            style={[s.selectBtn, cityModalVisible && s.inputFocused]}
+            onPress={() => setCityModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="location-outline" size={18} color={selectedCities.length > 0 ? BENI : INK_30} />
+            <Text style={[s.selectBtnText, selectedCities.length > 0 && s.selectBtnTextActive]} numberOfLines={1}>
+              {selectedCities.length > 0 ? selectedCities.join(', ') : 'Select cities'}
             </Text>
+            <Ionicons name="chevron-down" size={16} color={INK_30} />
           </TouchableOpacity>
 
-          {/* แสดง chips เมืองที่เลือก */}
           {selectedCities.length > 0 && (
-            <View style={styles.chipsRow}>
+            <View style={s.chipsRow}>
               {selectedCities.map(name => (
-                <View key={name} style={styles.chip}>
-                  <Text style={styles.chipText}>{name}</Text>
-                </View>
+                <TouchableOpacity key={name} style={s.chip} onPress={() => toggleCity(name)} activeOpacity={0.8}>
+                  <Text style={s.chipText}>{name}</Text>
+                  <Ionicons name="close-outline" size={16} color={BENI} />
+                </TouchableOpacity>
               ))}
             </View>
           )}
         </View>
 
-
-        <Modal visible={cityModalVisible} animationType="slide" transparent>
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>City</Text>
-
-              {/* ช่องค้นหา */}
-              <TextInput
-                placeholder="Find city..."
-                value={citySearch}
-                onChangeText={setCitySearch}
-                style={styles.searchInput}
-              />
-
-              {/* รายการเมือง + เช็คบ็อกซ์ */}
-              {loadingCities ? (
-                <ActivityIndicator style={{ marginVertical: 16 }} />
-              ) : (
-                <FlatList
-                  data={filteredCities}
-                  keyExtractor={(item) => String(item.id)}
-                  keyboardShouldPersistTaps="handled"
-                  style={{ maxHeight: 320 }}
-                  ListEmptyComponent={
-                    <Text style={{ textAlign: 'center', paddingVertical: 16, color: '#666' }}>
-                      City not found
-                    </Text>
-                  }
-                  renderItem={({ item }) => {
-                    const checked = selectedCities.includes(item.name);
-                    return (
-                      <Pressable onPress={() => toggleCity(item.name)} style={styles.cityRow}>
-                        <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-                          {checked && <Text style={styles.checkboxTick}>✓</Text>}
-                        </View>
-                        <Text style={styles.cityName}>{item.name}</Text>
-                      </Pressable>
-                    );
-                  }}
-                />
-              )}
-
-              {/* ปุ่มปิด/ยืนยัน */}
-              <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
-                <TouchableOpacity style={[styles.modalBtn, styles.modalCancel]} onPress={() => setCityModalVisible(false)}>
-                  <Text style={styles.modalBtnText}>Close</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalBtn, styles.modalApply]} onPress={() => setCityModalVisible(false)}>
-                  <Text style={[styles.modalBtnText, { color: '#fff' }]}>Confirm</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Interests</Text>
-          <TextInput value={triprequest} onChangeText={setTripRequest} placeholder="e.g. Cherry blossoms, local food, temples" style={styles.input} />
+        {/* ── Interests ── */}
+        <View style={s.section}>
+          <SectionHeader label="Interests & Details" />
+          <TextInput
+            value={triprequest}
+            onChangeText={setTripRequest}
+            placeholder="e.g. Focus on local food, temples, and relaxing cafes..."
+            placeholderTextColor={INK_30}
+            style={[s.input, s.inputMulti, focusedField === 'interests' && s.inputFocused]}
+            onFocus={() => setFocusedField('interests')}
+            onBlur={() => setFocusedField(null)}
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+            selectionColor={BENI}
+          />
         </View>
 
-        <View style={styles.row}>
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={styles.label}>Start Date</Text>
-            <TouchableOpacity style={styles.dateBtn} onPress={() => openPicker('start')}>
-              <Text style={styles.dateText}>{startDate.toDateString()}</Text>
+        <WashiDivider />
+
+        {/* ── Dates ── */}
+        <View style={s.section}>
+          <SectionHeader label="Travel Dates" />
+          <View style={s.dateRow}>
+            <TouchableOpacity style={s.dateBtn} onPress={() => setPicker({ show: true, mode: 'start' })} activeOpacity={0.8}>
+              <Text style={s.dateBtnLabel}>Start Date</Text>
+              <Text style={s.dateBtnValue}>{toDDMMYYYY(startDate)}</Text>
             </TouchableOpacity>
-          </View>
-          <View style={{ width: 12 }} />
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={styles.label}>End Date</Text>
-            <TouchableOpacity style={styles.dateBtn} onPress={() => openPicker('end')}>
-              <Text style={styles.dateText}>{endDate.toDateString()}</Text>
+
+            <View style={s.dateSeparator}>
+              <Ionicons name="arrow-forward-outline" size={16} color={KINCHA} />
+            </View>
+
+            <TouchableOpacity style={s.dateBtn} onPress={() => setPicker({ show: true, mode: 'end' })} activeOpacity={0.8}>
+              <Text style={s.dateBtnLabel}>End Date</Text>
+              <Text style={s.dateBtnValue}>{toDDMMYYYY(endDate)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -439,274 +365,293 @@ const onCreateWithAI = async () => {
           />
         )}
 
-        <TouchableOpacity style={styles.submitBtnWrapper} onPress={onCreateWithAI} disabled={loading || !tripName} activeOpacity={0.8}>
-            <LinearGradient 
-              // เปลี่ยนจากสีชมพู เป็นโทนสีน้ำตาลไม้ (Light Oak -> Dark Walnut)
-              colors={['#a7855b', '#b66214']} 
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} 
-              style={styles.submitBtnGradient}
-            >
-                {loading ? <ActivityIndicator color="#fff" /> : (
-                    <>
-                        <Text style={styles.btnPrimaryText}>Create Your Trip</Text>
-                    </>
-                )}
-            </LinearGradient>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.btn, styles.btnGhost]} onPress={() => router.back()} disabled={loading}>
-          <Text style={styles.btnGhostText}>Back</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Modal visible={loading} transparent animationType="fade">
-        {/* ใส่ Overlay ทำพื้นหลังสีดำโปร่งแสง และจัดให้อยู่ตรงกลางจอ */}
-        <View style={styles.loadingOverlay}>
-          
-          {/* ใส่ Card สีขาวขอบมน พร้อมเงาสีชมพูให้ดูเด่นเด้งขึ้นมา */}
-          <View style={styles.loadingCard}>
-            
-            <LottieView
-                source={require('@/assets/images/CreateTrip/Airplane.json')}
-                autoPlay
-                loop
-                style={{ width: 180, height: 180 }} // ปรับขนาดให้ใหญ่ขึ้นอีกนิดให้เด่นๆ
-              />
-              
-              {/* เพิ่มข้อความให้ผู้ใช้รู้ว่า AI กำลังทำงานอยู่ */}
-              <Text style={styles.loadingTitle}>Planning Your Journey...</Text>
-              <Text style={styles.loadingSub}>
-                 We’re finding the best places for you. This will only take a moment.
-              </Text>
-
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={alertConfig.visible} transparent animationType="fade">
-        <View style={styles.alertOverlay}>
-          <View style={styles.alertCard}>
-            
-            {/* แสดง Animation ตามสถานะ */}
-            {alertConfig.isSuccess ? (
-              <ApproveAnimation size={120} loop={true} />
+        {/* ── Submit ── */}
+        <View style={[s.section, { marginTop: 14, paddingBottom: 50 }]}>
+          <TouchableOpacity
+            style={[s.createBtn, (!tripName || loading) && s.createBtnDisabled]}
+            onPress={onCreateWithAI}
+            disabled={loading || !tripName}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <ActivityIndicator color={WHITE} size="small" />
             ) : (
-              <WrongAnimation size={120} loop={true} />
+              <>
+                <Ionicons name="sparkles-outline" size={18} color={WHITE} />
+                <Text style={s.createBtnText}>Plan with AI</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} disabled={loading} activeOpacity={0.8}>
+            <Text style={s.backBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      {/* ── City picker modal ── */}
+      <Modal visible={cityModalVisible} animationType="slide" transparent>
+        <View style={cm.backdrop}>
+          <View style={cm.card}>
+            <View style={cm.handle} />
+            <View style={cm.header}>
+              <Text style={cm.title}>Select Destinations</Text>
+              <TouchableOpacity style={cm.closeBtn} onPress={() => setCityModalVisible(false)}>
+                <Ionicons name="close" size={20} color={SUMI} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={cm.searchWrap}>
+              <Ionicons name="search-outline" size={18} color={INK_30} style={{ marginRight: 8 }} />
+              <TextInput
+                placeholder="Search city..."
+                placeholderTextColor={INK_30}
+                value={citySearch}
+                onChangeText={setCitySearch}
+                style={cm.searchInput}
+                selectionColor={BENI}
+              />
+              {citySearch ? (
+                <TouchableOpacity onPress={() => setCitySearch('')}>
+                  <Ionicons name="close-circle" size={18} color={INK_30} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {loadingCities ? (
+              <ActivityIndicator color={BENI} style={{ marginVertical: 40 }} />
+            ) : (
+              <FlatList
+                data={filteredCities}
+                keyExtractor={item => String(item.id)}
+                keyboardShouldPersistTaps="handled"
+                style={{ maxHeight: 380 }}
+                ListEmptyComponent={<Text style={cm.empty}>No cities found</Text>}
+                renderItem={({ item }) => {
+                  const checked = selectedCities.includes(item.name);
+                  return (
+                    <Pressable onPress={() => toggleCity(item.name)} style={[cm.cityRow, checked && cm.cityRowChecked]}>
+                      <View style={[cm.checkbox, checked && cm.checkboxChecked]}>
+                        {checked && <Ionicons name="checkmark" size={14} color={WHITE} />}
+                      </View>
+                      <Text style={[cm.cityName, checked && cm.cityNameChecked]}>{item.name}</Text>
+                    </Pressable>
+                  );
+                }}
+              />
             )}
 
-            <Text style={styles.alertTitle}>{alertConfig.title}</Text>
-            <Text style={styles.alertMessage}>{alertConfig.message}</Text>
-
-            {/* ปุ่มกดตกลง */}
-            <TouchableOpacity style={styles.alertBtn} onPress={closeAlert} activeOpacity={0.8}>
-              <LinearGradient 
-                // สีเขียวถ้าสำเร็จ สีชมพูแดงถ้าผิดพลาด
-                colors={alertConfig.isSuccess ? ['#66BB6A', '#43A047'] : ['#FFA0B4', '#FF526C']} 
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} 
-                style={styles.alertBtnGradient}
-              >
-                <Text style={styles.alertBtnText}>View Details</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
+            <View style={cm.footer}>
+              {selectedCities.length > 0 && (
+                <Text style={cm.selectedCount}>{selectedCities.length} selected</Text>
+              )}
+              <TouchableOpacity style={cm.confirmBtn} onPress={() => setCityModalVisible(false)} activeOpacity={0.85}>
+                <Text style={cm.confirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
 
+      {/* ── Loading modal ── */}
+      <Modal visible={loading} transparent animationType="fade">
+        <View style={lm.overlay}>
+          <View style={lm.card}>
+            <LottieView
+              source={require('@/assets/images/CreateTrip/Airplane.json')}
+              autoPlay
+              loop
+              style={{ width: 160, height: 160 }}
+            />
+            <Text style={lm.title}>Crafting Itinerary</Text>
+            <Text style={lm.sub}>Our AI is designing the perfect journey for you.</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Alert modal ── */}
+      <Modal visible={alertConfig.visible} transparent animationType="fade">
+        <View style={alm.overlay}>
+          <View style={alm.card}>
+            {alertConfig.isSuccess
+              ? <ApproveAnimation size={100} loop={false} />
+              : <WrongAnimation size={100} loop={false} />
+            }
+            <Text style={alm.title}>{alertConfig.title}</Text>
+            <Text style={alm.message}>{alertConfig.message}</Text>
+            <TouchableOpacity
+              style={[alm.btn, alertConfig.isSuccess ? alm.btnSuccess : alm.btnError]}
+              onPress={closeAlert}
+              activeOpacity={0.85}
+            >
+              <Text style={alm.btnText}>{alertConfig.isSuccess ? 'View Details' : 'Close'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container:{ flex:1, padding:20, gap:16 },
-  title:{ fontSize:22, fontWeight:'800' },
-  sub:{ color:'#6b7280', marginBottom:8 },
-  field:{ gap:6 },
-  label:{ fontSize:13, color:'#374151' },
-  input:{ borderWidth:1, borderColor:'#e5e7eb', borderRadius:12, padding:12, fontSize:16, backgroundColor:'#fff' },
-  row:{ flexDirection:'row', alignItems:'flex-end', gap:12 },
+// ─── Main styles ──────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  scrollContent: { backgroundColor: WASHI, paddingBottom: 20 },
 
-  dateBtn:{ borderWidth:1, borderColor:'#e5e7eb', borderRadius:12, padding:12, backgroundColor:'#fff' },
-  dateText:{ fontSize:16, color: '#111' },
+  // Minimal Premium Header
+  pageHeader: { backgroundColor: SUMI },
+  pageTopBar: { height: 3, backgroundColor: BENI },
+  pageHeaderInner: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 16 },
+  pageTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  pageTitleBar: { width: 3, height: 36, backgroundColor: BENI, borderRadius: 99 },
+  pageTitle: { fontSize: 22, fontFamily: 'ShipporiMincho_800ExtraBold', color: WASHI, letterSpacing: 0.3 },
+  pageSub: { fontSize: 11, fontFamily: 'NotoSansJP_400Regular', color: 'rgba(250,245,236,0.5)', marginTop: 2, letterSpacing: 0.3 },
+ 
 
+  // Elegant Divider
+  dividerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 24 },
+  dividerLine: { flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.4 },
+  dividerDot: { fontSize: 9, color: KINCHA, marginHorizontal: 12, opacity: 0.6 },
+
+  // Sections
+  section: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 6 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  sectionBar: { width: 4, height: 16, borderRadius: 2, backgroundColor: KINCHA },
+  sectionLabel: { fontSize: 13, fontFamily: 'NotoSansJP_700Bold', color: SUMI, letterSpacing: 0.5, textTransform: 'uppercase' },
+
+  // Minimal Image picker
   imagePicker: {
-    width: '100%', height: 160,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 16,
-    borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed',
-    justifyContent: 'center', alignItems: 'center',
-    overflow: 'hidden', marginBottom: 10
+    width: '100%', height: 170, borderRadius: 20,
+    borderWidth: 1.5, borderColor: INK_12, borderStyle: 'dashed',
+    overflow: 'hidden', backgroundColor: WHITE,
   },
   imagePreview: { width: '100%', height: '100%', resizeMode: 'cover' },
-  imagePlaceholder: { alignItems: 'center', gap: 6 },
-  imagePlaceholderText: { color: '#6B7280', fontSize: 14, fontWeight: '500' },
-  editIconBadge: {
-    position: 'absolute', bottom: 10, right: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)', padding: 6, borderRadius: 20
+  imageOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(28,20,16,0.1)' },
+  imageEditBadge: {
+    position: 'absolute', bottom: 14, right: 14,
+    backgroundColor: 'rgba(255,255,255,0.9)', padding: 8, borderRadius: 20,
+    shadowColor: SUMI, shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
   },
+  imagePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  cameraRing: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: WASHI,
+    borderWidth: 1, borderColor: WASHI_DARK,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  imagePlaceholderText: { fontSize: 13, fontFamily: 'NotoSansJP_500Medium', color: INK_60 },
 
-  btn:{ padding:16, borderRadius:12, alignItems:'center' },
-  btnPrimary:{ backgroundColor:'#111827' },
-  btnPrimaryText:{ color:'#fff', fontSize:16, fontWeight:'700', textAlign: 'center' },
-  btnGhost:{ backgroundColor:'#fff', borderWidth:1, borderColor:'#e5e7eb' },
-  btnGhostText:{ color:'#111827', fontSize:16, fontWeight:'700', textAlign: 'center' },
+  // Modern Inputs
+  input: {
+    backgroundColor: WHITE,
+    borderWidth: 1.2, borderColor: INK_12, borderRadius: 16,
+    paddingHorizontal: 18, paddingVertical: 15,
+    fontSize: 14, fontFamily: 'NotoSansJP_400Regular', color: SUMI,
+    shadowColor: SUMI, shadowOpacity: 0.03, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  inputMulti: { minHeight: 100, paddingTop: 16 },
+  inputFocused: { borderColor: KINCHA, borderWidth: 1.5, shadowOpacity: 0.06 },
+
+  // Select button
+  selectBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: WHITE, borderWidth: 1.2, borderColor: INK_12,
+    borderRadius: 16, paddingHorizontal: 18, paddingVertical: 14,
+    shadowColor: SUMI, shadowOpacity: 0.03, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  selectBtnText: { flex: 1, fontSize: 14, fontFamily: 'NotoSansJP_400Regular', color: INK_30 },
+  selectBtnTextActive: { color: SUMI, fontFamily: 'NotoSansJP_500Medium' },
+
+  // Refined Chips
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: WHITE,
+    borderWidth: 1, borderColor: 'rgba(192,57,43,0.3)',
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+  },
+  chipText: { fontSize: 12, fontFamily: 'NotoSansJP_500Medium', color: BENI },
+
+  // Dates
+  dateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  dateBtn: {
+    flex: 1, backgroundColor: WHITE, 
+    borderWidth: 1.2, borderColor: INK_12, borderRadius: 16, 
+    paddingVertical: 14, paddingHorizontal: 16,
+    shadowColor: SUMI, shadowOpacity: 0.03, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  dateBtnLabel: { fontSize: 10, fontFamily: 'NotoSansJP_500Medium', color: INK_60, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  dateBtnValue: { fontSize: 14, fontFamily: 'NotoSansJP_700Bold', color: SUMI },
+  dateSeparator: { paddingHorizontal: 4 },
+
+  // Buttons
+  createBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: BENI, paddingVertical: 16, borderRadius: 24,
+    shadowColor: BENI, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
+  },
+  createBtnDisabled: { backgroundColor: WASHI_DARK, shadowOpacity: 0, elevation: 0 },
+  createBtnText: { fontSize: 15, fontFamily: 'NotoSansJP_700Bold', color: WHITE, letterSpacing: 0.5 },
+  backBtn: {
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 16, marginTop: 8, borderRadius: 24,
+  },
+  backBtnText: { fontSize: 13, fontFamily: 'NotoSansJP_500Medium', color: INK_60 },
+});
+
+// ─── City modal styles (Premium UI) ───────────────────────────────────────────
+const cm = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(28,20,16,0.6)', justifyContent: 'flex-end' },
+  card: { backgroundColor: WASHI, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 24 },
+  handle: { width: 36, height: 4, backgroundColor: INK_12, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 8 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 16 },
+  title: { fontSize: 17, fontFamily: 'ShipporiMincho_700Bold', color: SUMI },
+  closeBtn: { padding: 4 },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: WHITE, borderRadius: 16, marginHorizontal: 24, marginBottom: 16,
+    paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: WASHI_DARK,
+  },
+  searchInput: { flex: 1, fontSize: 14, fontFamily: 'NotoSansJP_400Regular', color: SUMI },
+  empty: { textAlign: 'center', paddingVertical: 40, color: INK_30, fontFamily: 'NotoSansJP_400Regular', fontSize: 14 },
+  cityRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 24, borderBottomWidth: 0.5, borderBottomColor: INK_12 },
+  cityRowChecked: { backgroundColor: 'rgba(184,150,62,0.06)' }, // Very light gold background when checked
+  checkbox: { width: 22, height: 22, borderRadius: 8, borderWidth: 1.5, borderColor: INK_30, alignItems: 'center', justifyContent: 'center', backgroundColor: WHITE },
+  checkboxChecked: { backgroundColor: BENI, borderColor: BENI },
+  cityName: { fontSize: 15, fontFamily: 'NotoSansJP_400Regular', color: SUMI },
+  cityNameChecked: { fontFamily: 'NotoSansJP_700Bold', color: BENI },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 16 },
+  selectedCount: { fontSize: 13, fontFamily: 'NotoSansJP_500Medium', color: INK_60 },
+  confirmBtn: {
+    backgroundColor: SUMI, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 20,
+    shadowColor: SUMI, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+  },
+  confirmText: { color: WHITE, fontFamily: 'NotoSansJP_700Bold', fontSize: 14, letterSpacing: 0.5 },
+});
+
+// ─── Loading & Alert Modals ───────────────────────────────────────────────────
+const lm = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(28,20,16,0.65)', justifyContent: 'center', alignItems: 'center' },
+  card: { 
+    width: '80%', backgroundColor: WASHI, borderRadius: 24, 
+    alignItems: 'center', paddingVertical: 36, paddingHorizontal: 24,
+    shadowColor: SUMI, shadowOpacity: 0.2, shadowRadius: 20, shadowOffset: { width: 0, height: 10 },
+  },
+  title: { fontSize: 18, fontFamily: 'ShipporiMincho_700Bold', color: SUMI, marginTop: 16 },
+  sub: { fontSize: 13, fontFamily: 'NotoSansJP_400Regular', color: INK_60, marginTop: 8, textAlign: 'center', lineHeight: 20 },
+});
+
+const alm = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(28,20,16,0.65)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   card: {
-    width: 140,
-    height: 150,
-    marginRight: 12,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: "#f5f5f5",
-    alignItems: "center",
+    width: '85%', backgroundColor: WASHI, borderRadius: 24,
+    alignItems: 'center', paddingHorizontal: 28, paddingTop: 32, paddingBottom: 28,
+    shadowColor: SUMI, shadowOpacity: 0.2, shadowRadius: 20, shadowOffset: { width: 0, height: 10 },
   },
-  cardSelected: {
-    borderWidth: 3,
-    borderColor: "#007AFF",
-  },
-  image: {
-    width: "100%",
-    height: 100,
-  },
-  cardText: {
-    padding: 8,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-   selectBtn: {
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 12, backgroundColor: '#fff',
-  },
-  selectBtnText: { color: '#333' },
-
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  chip: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  chipText: { color: '#334155' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16 },
-  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  searchInput: {
-    borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10,
-    backgroundColor: '#fff',
-  },
-  cityRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 4 },
-  checkbox: {
-    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: '#cbd5e1',
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff',
-  },
-  checkboxChecked: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
-  checkboxTick: { color: '#fff', fontWeight: '900', lineHeight: 18 },
-  cityName: { fontSize: 16, color: '#111827' },
-  modalBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb' },
-  modalCancel: { backgroundColor: '#fff' },
-  modalApply: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
-  modalBtnText: { fontWeight: '700' },
-  // --- Loading Modal Styles ---
-  loadingOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)', // พื้นหลังสีดำโปร่งแสง
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingCard: {
-    width: '80%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    paddingVertical: 40,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    shadowColor: '#FF6B81',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-    elevation: 10,
-  },
-  loadingTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#4A3B3D',
-    marginTop: 24,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  loadingSub: {
-    fontSize: 14,
-    color: '#7A6B6D',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  // --- Custom Alert Styles ---
-  alertOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  alertCard: {
-    width: '100%',
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#FF6B81',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  alertTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#4A3B3D',
-    marginTop: 10,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  alertMessage: {
-    fontSize: 15,
-    color: '#7A6B6D',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  alertBtn: {
-    width: '100%',
-    borderRadius: 16,
-    shadowColor: '#FF526C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  alertBtnGradient: {
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  alertBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  // --- Styles สำหรับปุ่ม Create Trip แบบใหม่ ---
-  submitBtnWrapper: {
-    marginTop: 10, 
-    borderRadius: 25, 
-    // เปลี่ยนเงาเป็นสีน้ำตาลเข้ม
-    shadowColor: '#8B5A2B', 
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35, 
-    shadowRadius: 8, 
-    elevation: 5
-  },
-  submitBtnGradient: {
-    flexDirection: 'row', 
-    paddingVertical: 16, 
-    borderRadius: 25,
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    gap: 8
-  },
-
+  title: { fontSize: 18, fontFamily: 'ShipporiMincho_700Bold', color: SUMI, marginTop: 16, marginBottom: 8, textAlign: 'center' },
+  message: { fontSize: 14, fontFamily: 'NotoSansJP_400Regular', color: INK_60, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  btn: { width: '100%', paddingVertical: 15, borderRadius: 20, alignItems: 'center' },
+  btnSuccess: { backgroundColor: KINCHA },
+  btnError: { backgroundColor: BENI },
+  btnText: { color: WHITE, fontFamily: 'NotoSansJP_700Bold', fontSize: 14, letterSpacing: 0.5 },
 });

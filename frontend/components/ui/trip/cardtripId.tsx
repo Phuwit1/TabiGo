@@ -1,16 +1,39 @@
-import React from 'react';
-import { View, Text, TextInput ,StyleSheet, Image, TouchableOpacity, Share, Alert, ActivityIndicator, Modal } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View, Text, TextInput, StyleSheet, Image, TouchableOpacity,
+  Share, Alert, ActivityIndicator, Modal,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard'; // ต้องลง: npx expo install expo-clipboard
-import * as Linking from 'expo-linking'; 
-// import API function ของคุณ (สมมติว่าใช้ axios หรือ fetch)
+import * as Clipboard from 'expo-clipboard';
+import * as Linking from 'expo-linking';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // สมมติว่าเก็บ token ไว้ที่นี่
-import { API_URL } from '@/api.js'
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '@/api.js';
 import * as ImagePicker from 'expo-image-picker';
+
+// ─── Palette ──────────────────────────────────────────────────────────────────
+const BENI         = '#C0392B';
+const KINCHA       = '#B8963E';
+const KINCHA_LIGHT = '#D4AF55';
+const SUMI         = '#1C1410';
+const WASHI        = '#FAF5EC';
+const WASHI_DARK   = '#EDE5D8';
+const WHITE        = '#FFFFFF';
+const INK_60       = 'rgba(28,20,16,0.6)';
+const INK_30       = 'rgba(28,20,16,0.3)';
+const INK_12       = 'rgba(28,20,16,0.12)';
+
+const CLOUD_NAME    = 'dqghrasqe';
+const UPLOAD_PRESET = 'TabiGo';
+
+// ─── Status config ────────────────────────────────────────────────────────────
+const STATUS_CONFIG = {
+  'On Trip':    { color: KINCHA_LIGHT, bg: 'rgba(184,150,62,0.12)', icon: 'airplane' as const },
+  'Upcoming':   { color: BENI,         bg: 'rgba(192,57,43,0.1)',   icon: 'time-outline' as const },
+  'Trip Ended': { color: INK_60,       bg: 'rgba(28,20,16,0.07)',   icon: 'checkmark-done' as const },
+};
 
 interface TripCardProps {
   name: string;
@@ -19,390 +42,291 @@ interface TripCardProps {
   status: 'On Trip' | 'Upcoming' | 'Trip Ended';
   people: number;
   image: string;
-  budget?: number; // เพิ่ม budget แบบ optional
-  netStatus?: boolean; // สถานะออนไลน์/ออฟไลน์
-  planId?: string; // สำหรับส่ง id ไปหน้า budget ถ้าต้องใช้
+  budget?: number;
+  netStatus?: boolean;
+  planId?: string;
   tripId?: string;
   groupcode?: string;
   onGroupCreated?: (newGroupData: any) => void;
   onNameUpdate?: (newName: string) => void;
   onImageUpdate?: (newImageUrl: string) => void;
-  
 }
 
-const CLOUD_NAME = "dqghrasqe"; 
-const UPLOAD_PRESET = "TabiGo";
+const TripCardID: React.FC<TripCardProps> = ({
+  name, date, duration, status, people, image,
+  budget = 0, netStatus, planId, tripId,
+  onGroupCreated, onNameUpdate, onImageUpdate,
+}) => {
+  const router = useRouter();
 
-const TripCardID: React.FC<TripCardProps> = ({name, date, duration, status, people, image, budget = 0, netStatus, planId,tripId ,onGroupCreated, onNameUpdate, onImageUpdate,}) => {
-    const navigation = useNavigation<any>();
-    const router = useRouter();
-    console.log('planId from props:', planId);
-    console.log('tripId from props:', tripId);
-    const [uploading, setUploading] = useState(false);
+  const [uploading, setUploading]           = useState(false);
+  const [loading, setLoading]               = useState(false);
+  const [groupCode, setGroupCode]           = useState<string | null>(null);
+  const [isEditingName, setIsEditingName]   = useState(false);
+  const [tripName, setTripName]             = useState(name);
+  const [tempName, setTempName]             = useState(name);
+  const [savingName, setSavingName]         = useState(false);
+  const [isShareModalVisible, setShareModalVisible] = useState(false);
 
-    const [loading, setLoading] = useState(false);
-    const [groupCode, setGroupCode] = useState<string | null>(null);
+  const hasGroup = !!tripId || !!groupCode;
+  const st = STATUS_CONFIG[status] ?? STATUS_CONFIG['Upcoming'];
 
-    const [isEditingName, setIsEditingName] = useState(false);
-    const [tripName, setTripName] = useState(name); // เก็บชื่อปัจจุบัน
-    const [tempName, setTempName] = useState(name); // เก็บชื่อขณะพิมพ์
-    const [savingName, setSavingName] = useState(false);
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  const goToBudget = () => router.push(`/trip/${planId}/budget`);
+  const goToMember = () => router.push(`/trip/${planId}/member`);
 
-    const hasGroup = !!tripId || !!groupCode;
-    console.log("groupCode group:", groupCode);
-    const [isShareModalVisible, setShareModalVisible] = useState(false);
-    const goToBudget = () => {
-      router.push(`/trip/${planId}/budget`); // ให้คุณตั้งชื่อหน้านี้ไว้ใน navigation
-    };
-
-    const goToMember = () => {
-      router.push(`/trip/${planId}/member`); // ให้คุณตั้งชื่อหน้านี้ไว้ใน navigation
-    };
-
-    const handleCopyCode = async () => {
-    if (groupCode) {
-      await Clipboard.setStringAsync(groupCode);
-      Alert.alert("Copied", "Invite code copied to clipboard!");
-    }
-    };
-
-    const uploadToCloudinary = async (uri: string) => {
-      const data = new FormData();
-      let filename = uri.split('/').pop();
-      let match = /\.(\w+)$/.exec(filename || '');
-      let type = match ? `image/${match[1]}` : `image`;
-
-      // @ts-ignore
-      data.append('file', { uri: uri, name: filename, type });
-      data.append('upload_preset', UPLOAD_PRESET);
-
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-        method: 'POST',
-        body: data,
-        headers: { 'content-type': 'multipart/form-data' },
-      });
-      
-      const json = await res.json();
-      return json.secure_url;
-  };
-  
-  const handleCopyLink = async () => {
-    if (groupCode) {
-      // สร้าง Deep Link (เช่น myapp://join-trip?code=XYZ)
-      const redirectUrl = Linking.createURL('join-trip', {
-        queryParams: { code: groupCode },
-      });
-      await Clipboard.setStringAsync(redirectUrl);
-      Alert.alert("Copied", "Invite link copied to clipboard!");
-    }
-  };
-
-  const handleChangeImage = async () => {
-    // A. ขอสิทธิ์และเลือกรูป
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'ขอสิทธิ์เข้าถึงรูปภาพครับ');
-      return;
-    }
-
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'images',
-      allowsEditing: true,
-      aspect: [16, 9],
-      quality: 0.7,
+  // ── Cloudinary upload ──────────────────────────────────────────────────────
+  const uploadToCloudinary = async (uri: string) => {
+    const data = new FormData();
+    const filename = uri.split('/').pop();
+    const match = /\.(\w+)$/.exec(filename || '');
+    const type = match ? `image/${match[1]}` : 'image';
+    // @ts-ignore
+    data.append('file', { uri, name: filename, type });
+    data.append('upload_preset', UPLOAD_PRESET);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+      method: 'POST', body: data, headers: { 'content-type': 'multipart/form-data' },
     });
+    const json = await res.json();
+    return json.secure_url;
+  };
 
+  // ── Change cover image ─────────────────────────────────────────────────────
+  const handleChangeImage = async () => {
+    const { status: perm } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm !== 'granted') { Alert.alert('Permission needed'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images', allowsEditing: true, aspect: [16, 9], quality: 0.7,
+    });
     if (result.canceled) return;
-
-    // B. เริ่มกระบวนการอัปโหลด
     try {
       setUploading(true);
-      const localUri = result.assets[0].uri;
-
-      // 1. อัปขึ้น Cloudinary
-      const newImageUrl = await uploadToCloudinary(localUri);
-
-      // 2. อัปเดต Backend ทันที (Auto Save)
+      const newUrl = await uploadToCloudinary(result.assets[0].uri);
       const token = await AsyncStorage.getItem('access_token');
-      await axios.put(`${API_URL}/trip_plan/${planId}`, 
-        { image: newImageUrl }, // ส่ง URL ใหม่ไป
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      // 3. อัปเดตหน้าจอทันที (เรียก function set state ของตัวแม่)
-      if (onImageUpdate) {
-        onImageUpdate(newImageUrl);
-      }
-      
-    } catch (error) {
-      console.error("Update image failed:", error);
-      Alert.alert("Error", "อัปโหลดรูปไม่สำเร็จ");
+      await axios.put(`${API_URL}/trip_plan/${planId}`, { image: newUrl }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      onImageUpdate?.(newUrl);
+    } catch {
+      Alert.alert('Error', 'Image upload failed');
     } finally {
       setUploading(false);
     }
   };
 
-    const handleShareSystem = async () => {
-      if (!groupCode) return;
-      const redirectUrl = Linking.createURL('join-trip', {
-        queryParams: { code: groupCode },
+  // ── Edit name ──────────────────────────────────────────────────────────────
+  const handleEditname = async () => {
+    if (!tempName.trim()) { Alert.alert('Error', 'Trip name cannot be empty'); return; }
+    if (tempName === tripName) { setIsEditingName(false); return; }
+    try {
+      setSavingName(true);
+      const token = await AsyncStorage.getItem('access_token');
+      await axios.put(`${API_URL}/trip_plan/${planId}`, { name_group: tempName }, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      try {
-        await Share.share({
-          message: `Join my trip "${name}" on Japan Planner!\nCode: ${groupCode}\nLink: ${redirectUrl}`,
-        });
-      } catch (error: any) {
-        Alert.alert(error.message);
-      }
-    };
+      setTripName(tempName);
+      setIsEditingName(false);
+      onNameUpdate?.(tempName);
+    } catch {
+      Alert.alert('Error', 'Could not update trip name');
+      setTempName(tripName);
+    } finally {
+      setSavingName(false);
+    }
+  };
 
-    const handleCreateGroup = async () => {
+  // ── Group / share ──────────────────────────────────────────────────────────
+  const handleCreateGroup = async () => {
     setLoading(true);
     try {
-        const token = await AsyncStorage.getItem('access_token');// ดึง Token
-        console.log("👉 Sending Token:", token);
-        const response = await axios.post(
-            `${API_URL}/trip_group/create_from_plan/${planId}`, 
-            {}, 
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-
-        const newGroup = response.data;
-        setGroupCode(newGroup.uniqueCode);
-        
-        Alert.alert("Success", "Trip Group Created Successfully!");
-        
-        if (onGroupCreated) {
-            onGroupCreated(newGroup);
-        }
-
-    } catch (error) {
-        console.error(error);
-        Alert.alert("Error", "Failed to create group.");
+      const token = await AsyncStorage.getItem('access_token');
+      const res = await axios.post(`${API_URL}/trip_group/create_from_plan/${planId}`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setGroupCode(res.data.uniqueCode);
+      onGroupCreated?.(res.data);
+    } catch {
+      Alert.alert('Error', 'Failed to create group');
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
   const onSharePress = async () => {
-    // ถ้าเพิ่งสร้างเสร็จมี groupCode อยู่แล้วก็เปิดเลย
-    if (groupCode) {
-      setShareModalVisible(true);
-      return;
-    }
-
-    // ถ้ามี tripId (เป็นกลุ่มอยู่แล้ว) แต่ยังไม่มี code ใน state -> ต้องไป fetch มาก่อน
+    if (groupCode) { setShareModalVisible(true); return; }
     if (tripId) {
-        setLoading(true);
-        try {
-            const token = await AsyncStorage.getItem('access_token');
-            const res = await axios.get(`${API_URL}/trip_group/${tripId}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setGroupCode(res.data.uniqueCode);
-            setShareModalVisible(true);
-        } catch (e) {
-            console.error("Fetch group error", e);
-            Alert.alert("Error", "ไม่สามารถดึงข้อมูลกลุ่มได้");
-        } finally {
-            setLoading(false);
-        }
+      setLoading(true);
+      try {
+        const token = await AsyncStorage.getItem('access_token');
+        const res = await axios.get(`${API_URL}/trip_group/${tripId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setGroupCode(res.data.uniqueCode);
+        setShareModalVisible(true);
+      } catch { Alert.alert('Error', 'Could not fetch group info'); }
+      finally { setLoading(false); }
     }
   };
 
-  const handleEditname = async () => {
-    if (!tempName.trim()) {
-      Alert.alert("Error", "ชื่อทริปห้ามว่าง");
-      return;
+  const handleCopyCode = async () => {
+    if (groupCode) { await Clipboard.setStringAsync(groupCode); Alert.alert('Copied!', 'Invite code copied'); }
+  };
+  const handleCopyLink = async () => {
+    if (groupCode) {
+      const url = Linking.createURL('join-trip', { queryParams: { code: groupCode } });
+      await Clipboard.setStringAsync(url);
+      Alert.alert('Copied!', 'Link copied');
     }
-    
-    // ถ้าชื่อเหมือนเดิมก็ไม่ต้องยิง API
-    if (tempName === tripName) {
-        setIsEditingName(false);
-        return;
-    }
-
-    try {
-
-      setSavingName(true);
-      const token = await AsyncStorage.getItem('access_token');
-
-      await axios.put(`${API_URL}/trip_plan/${planId}`, 
-        { name_group: tempName }, // ส่งชื่อใหม่ไป (เช็คชื่อ field ใน Backend ด้วยว่าใช้ 'name' หรือ 'name_group')
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setTripName(tempName);
-      setIsEditingName(false);
-      if (onNameUpdate) onNameUpdate(tempName);
-
-    } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "ไม่สามารถแก้ไขชื่อทริปได้");
-      setTempName(tripName); // Revert กลับ
-    } finally {
-      setSavingName(false);
-    }
-
+  };
+  const handleShareSystem = async () => {
+    if (!groupCode) return;
+    const url = Linking.createURL('join-trip', { queryParams: { code: groupCode } });
+    await Share.share({ message: `Join my trip "${tripName}" on TabiGo!\nCode: ${groupCode}\nLink: ${url}` });
   };
 
-  const handleCancelEdit = () => {
-    setTempName(tripName);
-    setIsEditingName(false);
-  };
-
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <View style={styles.titleRow}>
+    <View style={c.card}>
+      {/* Beni left stripe */}
+      <View style={c.leftStripe} />
+
+      <View style={c.inner}>
+        {/* ── Header row ── */}
+        <View style={c.headerRow}>
+          <View style={c.titleWrap}>
             {isEditingName ? (
-                // --- โหมดแก้ไข ---
-                <View style={styles.editContainer}>
-                    <TextInput
-                        style={styles.nameInput}
-                        value={tempName}
-                        onChangeText={setTempName}
-                        autoFocus
-                    />
-                    {savingName ? (
-                        <ActivityIndicator size="small" color="#007AFF" />
-                    ) : (
-                        <View style={styles.actionIcons}>
-                            <TouchableOpacity onPress={handleEditname}>
-                                <Ionicons name="checkmark-circle" size={24} color="#28a745" />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={handleCancelEdit}>
-                                <Ionicons name="close-circle" size={24} color="#FF3B30" />
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                </View>
+              <View style={c.editRow}>
+                <TextInput
+                  style={c.nameInput}
+                  value={tempName}
+                  onChangeText={setTempName}
+                  autoFocus
+                  selectionColor={BENI}
+                  placeholderTextColor={INK_30}
+                />
+                {savingName ? (
+                  <ActivityIndicator size="small" color={BENI} />
+                ) : (
+                  <View style={c.editActions}>
+                    <TouchableOpacity onPress={handleEditname}>
+                      <Ionicons name="checkmark-circle" size={22} color={KINCHA} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { setTempName(tripName); setIsEditingName(false); }}>
+                      <Ionicons name="close-circle" size={22} color={BENI} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             ) : (
-                // --- โหมดปกติ ---
-                <View style={styles.displayContainer}>
-                    <Text style={styles.tripName} numberOfLines={1}>{tripName}</Text>
-                    {netStatus && (
-                      <TouchableOpacity onPress={() => setIsEditingName(true)} style={styles.editIcon}>
-                          <Ionicons name="pencil" size={16} color="#666" />
-                      </TouchableOpacity>
-                    )}
-                </View>
+              <View style={c.nameRow}>
+                <Text style={c.tripName} numberOfLines={1}>{tripName}</Text>
+                {netStatus && (
+                  <TouchableOpacity onPress={() => setIsEditingName(true)} style={c.pencilBtn}>
+                    <Ionicons name="pencil" size={13} color={INK_60} />
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
-        </View>
-        {netStatus && (
-          !hasGroup ? (
-            <TouchableOpacity
-              style={styles.createGroupButton}
-              onPress={handleCreateGroup}
-              disabled={loading}
-            >
-              {loading ? (
-                  <ActivityIndicator size="small" color="#FFA500" />
-              ) : (
-                  <Text style={styles.createGroupText}>+ Create Group</Text>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.shareButton}
-              onPress={onSharePress}
-              disabled={loading}
-            >
-              <Ionicons name="share-social-outline" size={20} color="#007AFF" />
-              <Text style={styles.shareButtonText}>Share</Text>
-            </TouchableOpacity>
-          )
-        )}
-         
-      </View>
+          </View>
 
-      <View style={styles.imageRow}>
-        <TouchableOpacity 
-          onPress={handleChangeImage} 
-          disabled={uploading} // ห้ามกดซ้ำตอนกำลังโหลด
-          style={styles.imageContainer}
-        >
-           {/* ถ้ากำลังโหลด ให้โชว์ตัวหมุนๆ */}
-           {uploading ? (
-             <View style={[styles.image, styles.loadingOverlay]}>
-                <ActivityIndicator size="large" color="#FF6B6B" />
-             </View>
-           ) : (
-             <>
-               <Image source={{ uri: image }} style={styles.image} />
-               {/* ไอคอนกล้องเล็กๆ มุมขวา เพื่อบอกว่ากดเปลี่ยนได้ */}
-               <View style={styles.editBadge}>
-                 <Ionicons name="camera" size={12} color="white" />
-               </View>
-             </>
-           )}
-        </TouchableOpacity>
-        <View style={styles.details}>
-          <View style={styles.detailRow}>
-            <Ionicons name="calendar-outline" size={16} color="#444" />
-            <Text style={styles.detailText}>:  {date}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="airplane-outline" size={16} color="#444" />
-             <Text style={styles.detailText}>:  {duration} Days</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="cash-outline" size={16} color="#444" />
-            <Text style={styles.detailText}>:  ฿ {budget}</Text>
-            {netStatus && (
-              <TouchableOpacity style={styles.budgetButton} onPress={goToBudget}>
-                <Text style={styles.budgetText}>✏️</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="person-outline" size={16} color="#444" />
-            <Text style={styles.detailText}>:  {people} people</Text>
-            {netStatus && (
-              <TouchableOpacity style={styles.memberButton} onPress={goToMember}>
-                  <Text style={styles.budgetText}>✏️</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          
-   
-        </View>
-        
-      </View>
-
-      <Modal
-        visible={isShareModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShareModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Invite Friends</Text>
-                <TouchableOpacity onPress={() => setShareModalVisible(false)}>
-                    <Ionicons name="close" size={24} color="#666" />
-                </TouchableOpacity>
+          {/* Status + action row */}
+          <View style={c.badgeRow}>
+            <View style={[c.statusBadge, { backgroundColor: st.bg }]}>
+              <Ionicons name={st.icon} size={11} color={st.color} />
+              <Text style={[c.statusText, { color: st.color }]}>{status}</Text>
             </View>
-            
-            <Text style={styles.label}>Invite Code</Text>
-            <TouchableOpacity style={styles.copyBox} onPress={handleCopyCode}>
-                <Text style={styles.codeText}>{loading ? "Loading..." : (groupCode || "No Code")}</Text>
-                <Ionicons name="copy-outline" size={20} color="#666" />
-            </TouchableOpacity>
+            {netStatus && (
+              !hasGroup ? (
+                <TouchableOpacity style={c.createGroupBtn} onPress={handleCreateGroup} disabled={loading} activeOpacity={0.85}>
+                  {loading
+                    ? <ActivityIndicator size="small" color={KINCHA_LIGHT} />
+                    : <><Ionicons name="people-outline" size={11} color={KINCHA_LIGHT} /><Text style={c.createGroupText}>Group</Text></>
+                  }
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={c.shareBtn} onPress={onSharePress} disabled={loading} activeOpacity={0.85}>
+                  {loading
+                    ? <ActivityIndicator size="small" color={WASHI} />
+                    : <><Ionicons name="share-social-outline" size={11} color={WASHI} /><Text style={c.shareBtnText}>Share</Text></>
+                  }
+                </TouchableOpacity>
+              )
+            )}
+          </View>
+        </View>
 
-            <Text style={styles.label}>Invite Link</Text>
-            <TouchableOpacity style={styles.copyBox} onPress={handleCopyLink}>
-                <Text style={styles.linkText} numberOfLines={1}>
-                    myapp://join-trip?code={groupCode}
-                </Text>
-                <Ionicons name="link-outline" size={20} color="#666" />
-            </TouchableOpacity>
+        {/* ── Content row: image + info ── */}
+        <View style={c.contentRow}>
+          {/* Cover image */}
+          <TouchableOpacity onPress={handleChangeImage} disabled={uploading} style={c.imgWrap} activeOpacity={0.85}>
+            {uploading ? (
+              <View style={c.imgLoading}><ActivityIndicator color={BENI} /></View>
+            ) : (
+              <>
+                <Image source={{ uri: image }} style={c.img} />
+                <View style={c.imgOverlay} />
+                <View style={c.camBadge}><Ionicons name="camera" size={11} color={WHITE} /></View>
+              </>
+            )}
+          </TouchableOpacity>
 
-            <TouchableOpacity style={styles.mainShareButton} onPress={handleShareSystem}>
-                <Ionicons name="share-outline" size={20} color="white" />
-                <Text style={styles.mainShareText}>Share other apps</Text>
-            </TouchableOpacity>
+          {/* Info rows */}
+          <View style={c.infoCol}>
+            <InfoRow icon="calendar-outline" value={date} />
+            <InfoRow icon="airplane-outline" value={`${duration} Days`} />
+            <InfoRow icon="cash-outline" value={`฿ ${budget?.toLocaleString()}`}>
+              {netStatus && (
+                <TouchableOpacity style={c.miniBtn} onPress={goToBudget} activeOpacity={0.8}>
+                  <Ionicons name="pencil-outline" size={11} color={BENI} />
+                </TouchableOpacity>
+              )}
+            </InfoRow>
+            <InfoRow icon="people-outline" value={`${people} people`}>
+              {netStatus && (
+                <TouchableOpacity style={c.miniBtn} onPress={goToMember} activeOpacity={0.8}>
+                  <Ionicons name="pencil-outline" size={11} color={BENI} />
+                </TouchableOpacity>
+              )}
+            </InfoRow>
+          </View>
+        </View>
+
+
+      </View>
+
+      {/* ── Share modal ── */}
+      <Modal visible={isShareModalVisible} transparent animationType="fade" onRequestClose={() => setShareModalVisible(false)}>
+        <View style={m.overlay}>
+          <View style={m.card}>
+            <View style={m.topBar} />
+            <View style={m.header}>
+              <View style={m.headerLeft}>
+                <View style={m.headerAccent} />
+                <Text style={m.title}>Invite Friends</Text>
+              </View>
+              <TouchableOpacity style={m.closeBtn} onPress={() => setShareModalVisible(false)}>
+                <Ionicons name="close" size={16} color={WASHI} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={m.body}>
+              <Text style={m.label}>INVITE CODE</Text>
+              <TouchableOpacity style={m.copyBox} onPress={handleCopyCode} activeOpacity={0.8}>
+                <Text style={m.codeText}>{loading ? '...' : (groupCode ?? '—')}</Text>
+                <View style={m.copyIcon}><Ionicons name="copy-outline" size={15} color={BENI} /></View>
+              </TouchableOpacity>
+
+              <Text style={[m.label, { marginTop: 14 }]}>INVITE LINK</Text>
+              <TouchableOpacity style={m.copyBox} onPress={handleCopyLink} activeOpacity={0.8}>
+                <Text style={m.linkText} numberOfLines={1}>tabigo://join-trip?code={groupCode}</Text>
+                <View style={m.copyIcon}><Ionicons name="link-outline" size={15} color={BENI} /></View>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={m.shareBtn} onPress={handleShareSystem} activeOpacity={0.85}>
+                <Ionicons name="share-outline" size={16} color={WASHI} />
+                <Text style={m.shareBtnText}>Share via other apps</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -410,169 +334,131 @@ const TripCardID: React.FC<TripCardProps> = ({name, date, duration, status, peop
   );
 };
 
-const styles = StyleSheet.create({
+// ─── InfoRow helper ───────────────────────────────────────────────────────────
+const InfoRow = ({
+  icon, value, children,
+}: { icon: any; value: string; children?: React.ReactNode }) => (
+  <View style={c.infoRow}>
+    <View style={c.infoIcon}><Ionicons name={icon} size={12} color={BENI} /></View>
+    <Text style={c.infoText}>{value}</Text>
+    {children}
+  </View>
+);
+
+// ─── Card styles ──────────────────────────────────────────────────────────────
+const c = StyleSheet.create({
   card: {
+    backgroundColor: WASHI,
+    borderRadius: 16,
+    flexDirection: 'row',
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#ffffffff',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    backgroundColor: '#ffffffff',
+    borderColor: INK_12,
+    shadowColor: SUMI,
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  leftStripe: { width: 3, backgroundColor: BENI },
+  inner: { flex: 1, padding: 14 },
+
+  // Header
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 8 },
+  titleWrap: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tripName: { fontSize: 16, fontFamily: 'ShipporiMincho_700Bold', color: SUMI, flexShrink: 1 },
+  pencilBtn: {
+    width: 22, height: 22, borderRadius: 11, backgroundColor: WASHI_DARK,
+    alignItems: 'center', justifyContent: 'center',
   },
-  titleRow: {
-    flex: 1, // ให้กินพื้นที่ส่วนใหญ่
-    marginRight: 8,
-  },
-  displayContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  tripName: { 
-    fontSize: 18, 
-    fontWeight: 'bold',
-    flexShrink: 1, // ให้ตัดคำถ้าชื่อยาวเกิน
-  },
-  editIcon: {
-    padding: 4,
-  },
-  
-  // Styles ตอนกำลังพิมพ์
-  editContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
+  editRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   nameInput: {
-    flex: 1,
-    borderBottomWidth: 1,
-    borderBottomColor: '#007AFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    paddingVertical: 2,
-    color: '#333',
+    flex: 1, borderBottomWidth: 1.5, borderBottomColor: BENI,
+    fontSize: 15, fontFamily: 'ShipporiMincho_700Bold', color: SUMI, paddingVertical: 2,
   },
-  actionIcons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  status: {
-    fontSize: 14,
-    color: '#555',
-  },
-  imageRow: {
-    flexDirection: 'row',
-    marginTop: 8,
-  },
-  image: {
-    width: 130,
-    height: 110,
-    backgroundColor: '#ccc',
-    borderRadius: 8,
-  },
-  imageContainer: {
-    position: 'relative',
-  },
-  loadingOverlay: {
-    backgroundColor: '#eee',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editBadge: {
-    position: 'absolute',
-    bottom: 5,
-    right: 5,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: 4,
-    borderRadius: 10,
-  },
-  details: {
-    flex: 1,
-    marginLeft: 10,
-    justifyContent: 'space-around',
-  },
-  detailText: {
-    fontSize: 14,
-    color: '#444',
+  editActions: { flexDirection: 'row', gap: 6 },
+
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  // Status badge
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 99 },
+  statusText: { fontSize: 10, fontFamily: 'NotoSansJP_700Bold', letterSpacing: 0.3 },
+
+  // Content
+  contentRow: { flexDirection: 'row', gap: 12 },
+
+  // Image
+  imgWrap: { width: 110, height: 90, borderRadius: 10, overflow: 'hidden', backgroundColor: WASHI_DARK },
+  img: { width: '100%', height: '100%', resizeMode: 'cover' },
+  imgOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(28,20,16,0.1)' },
+  imgLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: WASHI_DARK },
+  camBadge: {
+    position: 'absolute', bottom: 5, right: 5,
+    backgroundColor: 'rgba(28,20,16,0.6)', padding: 4, borderRadius: 99,
   },
 
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  // Info
+  infoCol: { flex: 1, justifyContent: 'space-between' },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  infoIcon: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: 'rgba(192,57,43,0.07)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  budgetRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  marginTop: 4,
-},
-memberRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  marginTop: 4,
-},
-memberButton: {
-  marginLeft: 5,
-  backgroundColor: '#f0f0f0',
-  paddingVertical: 2,
-  paddingHorizontal: 6,
-  borderRadius: 6,
-},
+  infoText: { fontSize: 12, fontFamily: 'NotoSansJP_400Regular', color: INK_60, flex: 1 },
+  miniBtn: {
+    width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(192,57,43,0.25)',
+    backgroundColor: 'rgba(192,57,43,0.06)', alignItems: 'center', justifyContent: 'center',
+  },
 
-budgetButton: {
-  marginLeft: 2,
-  backgroundColor: '#f0f0f0',
-  paddingVertical: 2,
-  paddingHorizontal: 6,
-  borderRadius: 6,
-},
-  budgetText: {
-    fontSize: 10,
-    color: '#333',
+  createGroupBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderWidth: 1, borderColor: KINCHA,
+    backgroundColor: 'rgba(184,150,62,0.07)',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99,
   },
-    createGroupButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
+  createGroupText: { fontSize: 10, fontFamily: 'NotoSansJP_700Bold', color: KINCHA_LIGHT },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: BENI, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99,
+    shadowColor: BENI, shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 2,
   },
-  createGroupButtonPressed: {
-    backgroundColor: '#e0e0e0',
-  },
-  createGroupText: {
-    fontSize: 14,
-    color: '#FFA500',
-    fontWeight: '500',
-  },
-  createGroupTextPressed: {
-    color: '#cc8400',
-  },
-  shareButton: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, 
-    borderRadius: 6, backgroundColor: '#E3F2FD', gap: 4
-  },
-  shareButtonText: { fontSize: 14, color: '#007AFF', fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '85%', backgroundColor: 'white', borderRadius: 16, padding: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold' },
-  label: { fontSize: 14, color: '#666', marginBottom: 6, marginTop: 10 },
-  copyBox: { 
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#F5F5F5', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#EEE'
-  },
-  codeText: { fontSize: 18, fontWeight: 'bold', letterSpacing: 2, color: '#333' },
-  linkText: { fontSize: 14, color: '#007AFF', flex: 1, marginRight: 10 },
-  mainShareButton: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    backgroundColor: '#28a745', padding: 12, borderRadius: 8, marginTop: 24, gap: 8
-  },
-  mainShareText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
+  shareBtnText: { fontSize: 10, fontFamily: 'NotoSansJP_700Bold', color: WASHI },
 });
 
+// ─── Modal styles ─────────────────────────────────────────────────────────────
+const m = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(28,20,16,0.55)', justifyContent: 'center', alignItems: 'center', padding: 28 },
+  card: {
+    width: '100%', maxWidth: 380,
+    backgroundColor: WASHI, borderRadius: 20, overflow: 'hidden',
+    shadowColor: SUMI, shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 10,
+  },
+  topBar: { height: 3, backgroundColor: BENI },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 14 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerAccent: { width: 3, height: 16, backgroundColor: BENI, borderRadius: 99 },
+  title: { fontSize: 16, fontFamily: 'ShipporiMincho_700Bold', color: SUMI },
+  closeBtn: { width: 28, height: 28, borderRadius: 99, backgroundColor: SUMI, alignItems: 'center', justifyContent: 'center' },
+  body: { paddingHorizontal: 18, paddingBottom: 22 },
+  label: { fontSize: 10, fontFamily: 'NotoSansJP_700Bold', color: INK_30, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 7 },
+  copyBox: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: WASHI_DARK, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+    borderWidth: 1, borderColor: INK_12,
+  },
+  codeText: { fontSize: 20, fontFamily: 'NotoSansJP_700Bold', letterSpacing: 4, color: SUMI },
+  linkText: { fontSize: 12, fontFamily: 'NotoSansJP_400Regular', color: BENI, flex: 1, marginRight: 8 },
+  copyIcon: {
+    width: 28, height: 28, borderRadius: 99,
+    backgroundColor: 'rgba(192,57,43,0.08)', alignItems: 'center', justifyContent: 'center',
+  },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    backgroundColor: BENI, paddingVertical: 13, borderRadius: 99, marginTop: 20,
+    shadowColor: BENI, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4,
+  },
+  shareBtnText: { color: WASHI, fontFamily: 'NotoSansJP_700Bold', fontSize: 14 },
+});
 
 export default TripCardID;

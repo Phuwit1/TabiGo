@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, Text, TextInput, ScrollView, TouchableOpacity, 
-  Alert, ActivityIndicator, StyleSheet, 
-  Modal, SafeAreaView, Platform
+import React, { useState, useCallback } from 'react';
+import {
+  View, Text, TextInput, ScrollView, TouchableOpacity,
+  Alert, ActivityIndicator, StyleSheet,
+  Modal, SafeAreaView, Platform,
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { API_URL } from '@/api.js'; 
+import { API_URL } from '@/api.js';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,863 +16,845 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import DraggableFlatList, { ScaleDecorator, RenderItemParams } from 'react-native-draggable-flatlist';
 import dayjs from 'dayjs';
 import LottieView from 'lottie-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import ApproveAnimation from '@/components/ui/Alert/ApproveAnimation'; // แก้ Path ให้ตรงกับที่คุณเซฟ
-import WrongAnimation from '@/components/ui/Alert/WrongAnimation';
-import { da } from 'date-fns/locale';
-//import '@/dotenv/config';
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyA73tpAfskui7aqX9GXabfGLU0OZ5HLC-U';
 
+// ─── Palette ──────────────────────────────────────────────────────────────────
+const BENI         = '#C0392B';
+const BENI_LIGHT   = 'rgba(192,57,43,0.08)';
+const KINCHA       = '#B8963E';
+const KINCHA_LIGHT = '#D4AF55';
+const SUMI         = '#1C1410';
+const WASHI        = '#FAF5EC';
+const WASHI_DARK   = '#EDE5D8';
+const WHITE        = '#FFFFFF';
+const INK_60       = 'rgba(28,20,16,0.6)';
+const INK_30       = 'rgba(28,20,16,0.3)';
+const INK_12       = 'rgba(28,20,16,0.12)';
+
 export default function EditSchedule() {
-  // ✅ Get trip_id from URL and dayIndex from query param
   const { trip_id, dayIndex } = useLocalSearchParams();
   const router = useRouter();
-  const planId = trip_id; 
-  const [loading, setLoading] = useState(true);
+  const planId = trip_id;
+
+  const [loading, setLoading]                   = useState(true);
   const [selectedDayIndex, setSelectedDayIndex] = useState(dayIndex ? parseInt(dayIndex as string) : 0);
-  const [schedule, setSchedule] = useState<any>(null);
-  const [editedSchedule, setEditedSchedule] = useState<any>(null);
-  const [saving, setSaving] = useState(false);
+  const [schedule, setSchedule]                 = useState<any>(null);
+  const [editedSchedule, setEditedSchedule]     = useState<any>(null);
+  const [saving, setSaving]                     = useState(false);
+  const [isSearchVisible, setIsSearchVisible]   = useState(false);
+  const [showTimePicker, setShowTimePicker]     = useState(false);
+  const [tempTimeIndex, setTempTimeIndex]       = useState<number | null>(null);
+  const [tempDate, setTempDate]                 = useState(new Date());
+  const [focusedField, setFocusedField]         = useState<string | null>(null);
 
-  const [isSearchVisible, setIsSearchVisible] = useState(false);
-  // เลือกวัน 
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [tempTimeIndex, setTempTimeIndex] = useState<number | null>(null); // Store index of item being edited
-  const [tempDate, setTempDate] = useState(new Date());
-
-  // --- State สำหรับ Custom Alert ---
-  const [alertConfig, setAlertConfig] = useState({
-    visible: false,
-    title: '',
-    message: '',
-    isSuccess: false,
-    onConfirm: () => {}, 
-  });
+  // ── Add activity sheet ─────────────────────────────────────────────────────
+  // mode: null = closed | 'choose' = pick type | 'manual' = manual input | 'place' = Google search
+  const [addMode, setAddMode]                   = useState<null | 'choose' | 'manual' | 'place'>(null);
+  const [addActivityName, setAddActivityName]   = useState('');
+  const [addTime, setAddTime]                   = useState('09:00');
+  const [showAddTimePicker, setShowAddTimePicker] = useState(false);
 
   const showCustomAlert = (title: string, message: string, isSuccess = false, onConfirm = () => {}) => {
-    setAlertConfig({ visible: true, title, message, isSuccess, onConfirm });
+    Alert.alert(title, message, [{ text: 'OK', onPress: onConfirm }]);
   };
 
-  const closeAlert = () => {
-    setAlertConfig(prev => ({ ...prev, visible: false }));
-    if (alertConfig.onConfirm) alertConfig.onConfirm();
-  };
-
+  // ── Fetch ──────────────────────────────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
         try {
-          setLoading(true); // Set loading to true on each focus
+          setLoading(true);
           const token = await AsyncStorage.getItem('access_token');
           const headers: any = { 'Content-Type': 'application/json' };
           if (token) headers.Authorization = `Bearer ${token}`;
-
-          // Fetch data from API
           const res = await axios.get(`${API_URL}/trip_schedule/${planId}`, { headers });
           const payload = res.data?.payload;
-          
           setSchedule(payload);
-          // Use JSON.parse(JSON.stringify(...)) for deep copy
           setEditedSchedule(JSON.parse(JSON.stringify(payload)));
-        } catch (e) {
-          console.error("Failed to load data:", e);
-          showCustomAlert("Error", "Failed to load data", false);
+        } catch {
+          showCustomAlert('Error', 'Failed to load schedule', false);
         } finally {
           setLoading(false);
         }
       };
-
-      if (planId) {
-        fetchData();
-      }
-
-      // Cleanup function (optional - e.g. cancel request)
-      return () => {
-        // This runs when the screen loses focus (blur)
-      };
-    }, [planId]) // dependencies array
+      if (planId) fetchData();
+    }, [planId])
   );
 
-  // const updateActivity = (dayIdx: number, actIdx: number, field: string, value: string) => {
-  //   setEditedSchedule((prev: any) => {
-  //     const copy = { ...prev };
-  //     copy.itinerary[dayIdx].schedule[actIdx][field] = value;
-  //     return copy;
-  //   });
-  
-  // };
-  // make sure to sort by time after updating time field
+  // ── Edit helpers ───────────────────────────────────────────────────────────
   const updateActivity = (dayIdx: number, actIdx: number, field: string, value: string) => {
     setEditedSchedule((prev: any) => {
-      // 1. Create a deep-ish copy of the specific day's schedule to avoid direct state mutation
       const updatedItinerary = [...prev.itinerary];
-      const updatedSchedule = [...updatedItinerary[dayIdx].schedule];
-      
-      // 2. Update the specific field
+      const updatedSchedule  = [...updatedItinerary[dayIdx].schedule];
       updatedSchedule[actIdx] = { ...updatedSchedule[actIdx], [field]: value };
-
-      // 3. If the time was updated, sort the array by time
-      if (field === "time") {
+      if (field === 'time') {
         updatedSchedule.sort((a, b) => {
-          // Handle missing times just in case
           if (!a.time) return 1;
           if (!b.time) return -1;
-          
-          // "HH:mm" format sorts perfectly alphabetically
-          return a.time.localeCompare(b.time); 
+          return a.time.localeCompare(b.time);
         });
       }
-
-      // 4. Put the sorted schedule back into the itinerary
       updatedItinerary[dayIdx] = { ...updatedItinerary[dayIdx], schedule: updatedSchedule };
-
       return { ...prev, itinerary: updatedItinerary };
     });
   };
 
+  const handleDragEnd = ({ data }: { data: any[] }) => {
+    setEditedSchedule((prev: any) => {
+      const copy = { ...prev };
+      const originalTimes = copy.itinerary[selectedDayIndex].schedule.map((item: any) => item.time);
+      copy.itinerary[selectedDayIndex].schedule = data.map((item, index) => ({ ...item, time: originalTimes[index] }));
+      return copy;
+    });
+  };
+
+  const handleDeleteActivity = (actIdx: number) => {
+    Alert.alert('Delete Activity', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: () => setEditedSchedule((prev: any) => {
+          const copy = { ...prev };
+          copy.itinerary[selectedDayIndex].schedule.splice(actIdx, 1);
+          return copy;
+        }),
+      },
+    ]);
+  };
+
+  const handleAddDay = () => {
+    setEditedSchedule((prev: any) => {
+      const copy = JSON.parse(JSON.stringify(prev));
+      const itinerary = copy.itinerary;
+      if (!itinerary || itinerary.length === 0) return copy;
+      const lastDay    = itinerary[itinerary.length - 1];
+      const lastDayNum = parseInt(String(lastDay.day).replace(/\D/g, ''), 10) || itinerary.length;
+      copy.itinerary.push({
+        day: `Day ${lastDayNum + 1}`,
+        date: dayjs(lastDay.date).add(1, 'day').format('YYYY-MM-DD'),
+        schedule: [],
+      });
+      return copy;
+    });
+    setSelectedDayIndex(editedSchedule.itinerary.length);
+  };
+
+  const handleDeleteDay = (dayIndexToDelete: number) => {
+    if (editedSchedule.itinerary.length <= 1) {
+      showCustomAlert('Action Denied', 'Your trip must have at least one day.', false);
+      return;
+    }
+    Alert.alert('Delete Day', `Delete ${editedSchedule.itinerary[dayIndexToDelete].day}? All activities will be lost.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: () => {
+          setEditedSchedule((prev: any) => {
+            const copy = JSON.parse(JSON.stringify(prev));
+            copy.itinerary.splice(dayIndexToDelete, 1);
+            const baseDate = dayjs(copy.itinerary[0].date);
+            copy.itinerary = copy.itinerary.map((d: any, idx: number) => ({
+              ...d,
+              day: `Day ${idx + 1}`,
+              date: baseDate.add(idx, 'day').format('YYYY-MM-DD'),
+            }));
+            return copy;
+          });
+          setSelectedDayIndex(prev =>
+            dayIndexToDelete === prev ? Math.max(0, prev - 1) :
+            dayIndexToDelete < prev ? prev - 1 : prev
+          );
+        },
+      },
+    ]);
+  };
+
+  // ── Time picker ────────────────────────────────────────────────────────────
+  const openTimePicker = (timeStr: string, index: number) => {
+    setTempTimeIndex(index);
+    const now = new Date();
+    const [hh, mm] = timeStr.split(':').map(Number);
+    if (!isNaN(hh) && !isNaN(mm)) { now.setHours(hh); now.setMinutes(mm); }
+    setTempDate(now);
+    setShowTimePicker(true);
+  };
+
+  const onTimeChange = (event: any, selectedDate?: Date) => {
+    setShowTimePicker(Platform.OS === 'ios');
+    if (selectedDate && tempTimeIndex !== null) {
+      const hh = selectedDate.getHours().toString().padStart(2, '0');
+      const mm = selectedDate.getMinutes().toString().padStart(2, '0');
+      updateActivity(selectedDayIndex, tempTimeIndex, 'time', `${hh}:${mm}`);
+      if (Platform.OS === 'android') setTempTimeIndex(null);
+    } else {
+      setTempTimeIndex(null);
+    }
+  };
+
+  // ── Add place ──────────────────────────────────────────────────────────────
+  // คำนวณเวลาถัดไปที่ไม่ซ้ำ
+  const getNextAvailableTime = (): string => {
+    const schedule = editedSchedule?.itinerary[selectedDayIndex]?.schedule ?? [];
+    const usedTimes = new Set(schedule.map((s: any) => s.time));
+    let hh = 9, mm = 0;
+    if (schedule.length > 0) {
+      const lastTime = schedule[schedule.length - 1].time;
+      if (lastTime?.includes(':')) {
+        [hh, mm] = lastTime.split(':').map(Number);
+        hh = (hh + 1) % 24;
+      }
+    }
+    // วนหาเวลาที่ไม่ซ้ำ
+    let attempts = 0;
+    while (usedTimes.has(`${hh.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`) && attempts < 24) {
+      hh = (hh + 1) % 24;
+      attempts++;
+    }
+    return `${hh.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`;
+  };
+
+  const openAddSheet = () => {
+    setAddTime(getNextAvailableTime());
+    setAddActivityName('');
+    setAddMode('choose');
+  };
+
+  const handleAddTimePicked = (event: any, selectedDate?: Date) => {
+    setShowAddTimePicker(Platform.OS === 'ios');
+    if (!selectedDate) return;
+    const hh = selectedDate.getHours().toString().padStart(2, '0');
+    const mm = selectedDate.getMinutes().toString().padStart(2, '0');
+    const picked = `${hh}:${mm}`;
+    // เช็คว่าซ้ำกับเวลาที่มีอยู่ไหม
+    const usedTimes = new Set(
+      (editedSchedule?.itinerary[selectedDayIndex]?.schedule ?? []).map((s: any) => s.time)
+    );
+    if (usedTimes.has(picked)) {
+      Alert.alert('Time Conflict', `${picked} is already used. Please choose another time.`);
+      return;
+    }
+    setAddTime(picked);
+  };
+
+  const commitManualAdd = () => {
+    if (!addActivityName.trim()) {
+      Alert.alert('Required', 'Please enter an activity name.');
+      return;
+    }
+    setEditedSchedule((prev: any) => {
+      const copy = { ...prev };
+      copy.itinerary[selectedDayIndex].schedule.push({
+        time: addTime,
+        activity: addActivityName.trim(),
+        need_location: false,
+        specific_location_name: '',
+        lat: null, lng: null,
+      });
+      // sort by time
+      copy.itinerary[selectedDayIndex].schedule.sort((a: any, b: any) =>
+        (a.time || '').localeCompare(b.time || '')
+      );
+      return copy;
+    });
+    setAddMode(null);
+    setAddActivityName('');
+  };
+
+  const onPlaceSelected = (data: any, details: any = null) => {
+    const name     = data.description || data.name;
+    const location = details?.geometry?.location;
+    // เช็คซ้ำเวลา
+    const usedTimes = new Set(
+      (editedSchedule?.itinerary[selectedDayIndex]?.schedule ?? []).map((s: any) => s.time)
+    );
+    let time = addTime;
+    if (usedTimes.has(time)) {
+      // หาเวลาถัดไปอัตโนมัติ
+      let hh = parseInt(time.split(':')[0]), mm = parseInt(time.split(':')[1]);
+      let attempts = 0;
+      do { hh = (hh + 1) % 24; attempts++; }
+      while (usedTimes.has(`${hh.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`) && attempts < 24);
+      time = `${hh.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`;
+    }
+    setEditedSchedule((prev: any) => {
+      const copy = { ...prev };
+      copy.itinerary[selectedDayIndex].schedule.push({
+        time, activity: name, need_location: true,
+        specific_location_name: name,
+        lat: location?.lat || null, lng: location?.lng || null,
+      });
+      copy.itinerary[selectedDayIndex].schedule.sort((a: any, b: any) =>
+        (a.time || '').localeCompare(b.time || '')
+      );
+      return copy;
+    });
+    setAddMode(null);
+  };
+
+  // ── Save ───────────────────────────────────────────────────────────────────
   const confirmPlan = async () => {
     try {
       setSaving(true);
       const token = await AsyncStorage.getItem('access_token');
       const headers: any = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
-
-      // Update DB
-      await axios.put(`${API_URL}/trip_schedule/${planId}`, 
-        { plan_id: planId, payload: editedSchedule }, 
-        { headers }
-      );
-
+      await axios.put(`${API_URL}/trip_schedule/${planId}`, { plan_id: planId, payload: editedSchedule }, { headers });
       const itinerary = editedSchedule.itinerary;
-      if (itinerary && itinerary.length > 0) {
-        // หาวันที่ของวันสุดท้ายในทริป
-        const newEndDate = itinerary[itinerary.length - 1].date; 
-        console.log("New end date:", newEndDate);
-        await axios.put(`${API_URL}/trip_plan/${planId}`, 
-          { 
-            end_plan_date: dayjs(newEndDate).format('YYYY-MM-DD'), // ส่งไปแค่วันที่สิ้นสุดทริปอันใหม่
-            day_of_trip: dayjs(newEndDate).diff(dayjs(schedule.start_plan_date), 'day') + 1 // คำนวณจำนวนวันใหม่
-          }, 
-          { headers }
-        );
+      if (itinerary?.length > 0) {
+        const newEndDate = itinerary[itinerary.length - 1].date;
+        await axios.put(`${API_URL}/trip_plan/${planId}`, {
+          end_plan_date: dayjs(newEndDate).format('YYYY-MM-DD'),
+          day_of_trip: dayjs(newEndDate).diff(dayjs(schedule.start_plan_date), 'day') + 1,
+        }, { headers });
       }
-
-      showCustomAlert("Success!", "Changes saved successfully", true, () => {
-        router.back();
-      });
-      router.back(); 
-    } catch (e) {
-      console.error("Save failed:", e);
-      showCustomAlert("Error", "Failed to save", false);
+      showCustomAlert('Saved!', 'Your schedule has been updated.', true, () => router.back());
+    } catch {
+      showCustomAlert('Error', 'Failed to save changes', false);
     } finally {
       setSaving(false);
     }
   };
-  const handleAddActivity = () => {
-    setIsSearchVisible(true);
-    console.log(GOOGLE_API_KEY);
-  };
 
-  const handleDragEnd = ({ data }: { data: any[] }) => {
-    setEditedSchedule((prev: any) => {
-      const copy = { ...prev };
-      const currentSchedule = copy.itinerary[selectedDayIndex].schedule;
-
-      // 1. เก็บ "สล็อตเวลาเดิม" เอาไว้ตามลำดับ (เช่น 09:00, 10:00, 11:00)
-      const originalTimes = currentSchedule.map((item: any) => item.time);
-
-      // 2. เอาข้อมูลกิจกรรมที่โดนลากสลับตำแหน่งแล้ว มาแมปเข้ากับเวลาเดิม
-      // ทำให้ตัวที่เลื่อนขึ้นได้เวลาเช้าลง และตัวที่โดนดันลงได้เวลาสายขึ้น ตามที่คุณต้องการเป๊ะๆ
-      const updatedData = data.map((item, index) => ({
-        ...item,
-        time: originalTimes[index], 
-      }));
-
-      copy.itinerary[selectedDayIndex].schedule = updatedData;
-      return copy;
-    });
-  };
-
-  const onPlaceSelected = (data: any, details: any = null) => {
-    const name = data.description || data.name;
-    const location = details?.geometry?.location; // ได้ { lat: ..., lng: ... }
-
-    let nextTime = "09:00"; 
-    const currentSchedule = editedSchedule.itinerary[selectedDayIndex].schedule;
-    if (currentSchedule.length > 0) {
-        const lastTime = currentSchedule[currentSchedule.length - 1].time;
-        if (lastTime && lastTime.includes(":")) {
-            const [hh, mm] = lastTime.split(":").map(Number);
-            let newH = hh + 1; // Add 1 hour
-            if (newH >= 24) newH -= 24;
-            nextTime = `${newH.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}`;
-        }
-    }
-
-    setEditedSchedule((prev: any) => {
-      const copy = { ...prev };
-      // Add activity with location data
-      copy.itinerary[selectedDayIndex].schedule.push({
-        time: nextTime, // Default start time (can be made smarter)
-        activity: name, // Use the selected place name
-        need_location: true,
-        specific_location_name: name,
-        lat: location?.lat || null,
-        lng: location?.lng || null
-      });
-
-      
-      return copy;
-    });
-
-    setIsSearchVisible(false); // Close modal
-  };
-
-  const openTimePicker = (timeStr: string, index: number) => {
-    setTempTimeIndex(index);
-    
-    // Convert "HH:mm" string to Date Object for picker display
-    const now = new Date();
-    const [hh, mm] = timeStr.split(':').map(Number);
-    if (!isNaN(hh) && !isNaN(mm)) {
-      now.setHours(hh);
-      now.setMinutes(mm);
-    }
-    setTempDate(now);
-    setShowTimePicker(true);
-  };
-
-  // ฟังก์ชันเมื่อเลือกเวลาเสร็จ
-  const onTimeChange = (event: any, selectedDate?: Date) => {
-    setShowTimePicker(Platform.OS === 'ios'); // iOS requires Done button, Android closes automatically
-    
-    if (selectedDate && tempTimeIndex !== null) {
-      // Convert back to "HH:mm" string
-      const hh = selectedDate.getHours().toString().padStart(2, '0');
-      const mm = selectedDate.getMinutes().toString().padStart(2, '0');
-      const newTimeStr = `${hh}:${mm}`;
-
-      // Update main state
-      updateActivity(selectedDayIndex, tempTimeIndex, "time", newTimeStr);
-      
-      if (Platform.OS === 'android') {
-          setTempTimeIndex(null); // Reset index
-      }
-    } else {
-        // Cancel case
-        setTempTimeIndex(null);
-    }
-  };
-
-
-  const handleDeleteActivity = (actIdx: number) => {
-    Alert.alert("Confirm", "Are you sure you want to delete this activity?", [
-      { text: "Cancel", style: "cancel" },
-      { 
-        text: "Delete", 
-        style: "destructive",
-        onPress: () => {
-          setEditedSchedule((prev: any) => {
-            const copy = { ...prev };
-      // Delete activity by index from array
-            copy.itinerary[selectedDayIndex].schedule.splice(actIdx, 1);
-            return copy;
-          });
-        }
-      }
-    ]);
-  };
-
-  const handleAddDay = () => {
-    setEditedSchedule((prev: any) => {
-      const copy = JSON.parse(JSON.stringify(prev)); // Deep copy เพื่อป้องกันปัญหา State ผูกกัน
-      const itinerary = copy.itinerary;
-
-      if (!itinerary || itinerary.length === 0) return copy;
-
-      // หาวันสุดท้ายในทริป
-      const lastDayObj = itinerary[itinerary.length - 1];
-      
-      /// ✅ ดึงเฉพาะตัวเลขออกมาจาก String แล้วบวก 1 (ใช้ Regex เผื่อกรณีติดคำว่า "Day ")
-      const lastDayNumber = parseInt(String(lastDayObj.day).replace(/\D/g, ''), 10) || itinerary.length;
-      const nextDayStr = String(lastDayNumber + 1);
-
-      // สร้างข้อมูลวันใหม่
-      const newDay = {
-        day: `Day ${nextDayStr}`, // คืนค่ากลับไปเป็น String เช่น "Day 2", "Day 3"
-        date: dayjs(lastDayObj.date).add(1, 'day').format('YYYY-MM-DD'), // บวกเพิ่ม 1 วัน
-        schedule: [] // ให้ตารางเวลาว่างเปล่าสำหรับวันใหม่
-      };
-
-      // นำวันใหม่ไปต่อท้าย
-      copy.itinerary.push(newDay);
-      
-      return copy;
-    });
-
-    // (Option) เลื่อนให้ UI ไปโฟกัสที่วันใหม่ล่าสุดที่เพิ่งกดเพิ่ม
-    setSelectedDayIndex(editedSchedule.itinerary.length); 
-  };
-
-  const handleDeleteDay = (dayIndexToDelete: number) => {
-    // 1. ตรวจสอบว่ามีอย่างน้อย 1 วัน ห้ามลบจนหมด
-    if (editedSchedule.itinerary.length <= 1) {
-      showCustomAlert("Action Denied", "Your trip must have at least one day.", false);
-      return;
-    }
-
-    Alert.alert(
-      "Delete Day",
-      `Are you sure you want to delete ${editedSchedule.itinerary[dayIndexToDelete].day}? All activities will be lost.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive",
-          onPress: () => {
-            setEditedSchedule((prev: any) => {
-              // Deep copy เพื่อความปลอดภัย
-              const copy = JSON.parse(JSON.stringify(prev)); 
-              
-              // 1. ลบวันที่ต้องการออก
-              copy.itinerary.splice(dayIndexToDelete, 1);
-
-              // 2. รันหมายเลข Day ใหม่ (Day 1, Day 2, ...) และปรับวันที่ให้เรียงต่อกัน
-              const baseDate = dayjs(copy.itinerary[0].date); // ใช้วันแรกสุดเป็นตัวตั้งต้น
-              
-              copy.itinerary = copy.itinerary.map((dayObj: any, idx: number) => {
-                return {
-                  ...dayObj,
-                  day: `Day ${idx + 1}`, // อัปเดตชื่อเป็น Day 1, Day 2 ใหม่
-                  date: baseDate.add(idx, 'day').format('YYYY-MM-DD') // เลื่อนวันที่ให้ติดกัน
-                };
-              });
-
-              return copy;
-            });
-
-            // 3. จัดการแท็บที่กำลังเลือกอยู่ (selectedDayIndex)
-            setSelectedDayIndex((prevSelected) => {
-              if (dayIndexToDelete === prevSelected) {
-                // ถ้าลบแท็บที่กำลังดูอยู่ ให้ถอยกลับไป 1 วัน (หรือไม่ต่ำกว่า 0)
-                return Math.max(0, prevSelected - 1);
-              } else if (dayIndexToDelete < prevSelected) {
-                // ถ้าลบแท็บที่อยู่ก่อนหน้าแท็บที่ดูอยู่ ต้องลด index ลง 1 เพื่อให้ยังอยู่ที่เดิม
-                return prevSelected - 1;
-              }
-              return prevSelected;
-            });
-          }
-        }
-      ]
-    );
-  };
-  
+  // ── Loading screen ─────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={s.loadingScreen}>
         <LottieView
-          source={require('@/assets/images/Loading.json')} // เปลี่ยน Path ให้ตรงกับที่คุณเซฟ
-          autoPlay
-          loop
-          style={{ width: 200, height: 200 }}
+          source={require('@/assets/images/Loading.json')}
+          autoPlay loop
+          style={{ width: 160, height: 160 }}
         />
-        <Text style={{ marginTop: -20, fontSize: 18, fontWeight: 'bold', color: '#4A3B3D' }}>
-          Preparing your schedule...
-        </Text>
+        <Text style={s.loadingScreenText}>Preparing your schedule...</Text>
       </View>
     );
   }
-  if (!editedSchedule) return <View style={styles.container}><Text>Data not found</Text></View>;
+
+  if (!editedSchedule) return (
+    <View style={s.loadingScreen}><Text style={s.loadingScreenText}>Data not found</Text></View>
+  );
 
   const currentDay = editedSchedule.itinerary[selectedDayIndex];
 
-  // ✅ UI ของการ์ดแต่ละใบที่จะให้ลากได้
+  // ── Draggable item ─────────────────────────────────────────────────────────
   const renderDraggableItem = ({ item, getIndex, drag, isActive }: RenderItemParams<any>) => {
     const i = getIndex() ?? 0;
     return (
       <ScaleDecorator>
-        {/* Wrapped with TouchableOpacity that captures onLongPress event to start dragging */}
         <TouchableOpacity
           activeOpacity={1}
           onLongPress={drag}
-          delayLongPress={200} // Long press for 0.2 seconds to start dragging (prevents accidental drags during typing)
+          delayLongPress={200}
           disabled={isActive}
-          style={[styles.cardContainer, { opacity: isActive ? 0.8 : 1 }]}
+          style={[s.cardWrap, isActive && s.cardWrapActive]}
         >
-          <View style={[styles.card, isActive && { borderColor: '#FFA500', borderWidth: 2, transform: [{ scale: 1.02 }] }]}>
-            
-            {/* Icon to indicate dragging is possible */}
-            <View style={styles.dragHandleIcon}>
-              <Ionicons name="reorder-two" size={24} color="#CCC" />
-            </View>
-
-            <View style={{ flex: 1, marginLeft: 25 }}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Time</Text>
-                <TouchableOpacity onPress={() => openTimePicker(item.time, i)}>
-                  <View style={styles.timeInputBox}>
-                    <Text style={styles.timeText}>{item.time}</Text>
-                    <Ionicons name="time-outline" size={16} color="#666" />
-                  </View>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Activity</Text>
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  multiline
-                  value={item.activity}
-                  onChangeText={(val) => updateActivity(selectedDayIndex, i, "activity", val)}
-                />
-              </View>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.deleteButton} 
-              onPress={() => handleDeleteActivity(i)}
-            >
-              <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+          {/* Left time column */}
+          <View style={s.cardTimeCol}>
+            <TouchableOpacity style={s.timeBubble} onPress={() => openTimePicker(item.time, i)} activeOpacity={0.8}>
+              <Ionicons name="time-outline" size={11} color={WASHI} style={{ marginBottom: 2 }} />
+              <Text style={s.timeBubbleText}>{item.time}</Text>
             </TouchableOpacity>
+            <View style={s.timeConnector} />
+          </View>
 
+          {/* Card body */}
+          <View style={[s.card, isActive && s.cardActive]}>
+            {/* Drag handle */}
+            <View style={s.dragHandle}>
+              <Ionicons name="reorder-two" size={18} color={INK_30} />
+            </View>
+
+            {/* Activity input */}
+            <View style={s.cardInner}>
+              <Text style={s.cardLabel}>Activity</Text>
+              <TextInput
+                style={[s.cardInput, focusedField === `act-${i}` && s.inputFocused]}
+                multiline
+                value={item.activity}
+                onChangeText={val => updateActivity(selectedDayIndex, i, 'activity', val)}
+                onFocus={() => setFocusedField(`act-${i}`)}
+                onBlur={() => setFocusedField(null)}
+                placeholderTextColor={INK_30}
+              />
+            </View>
+
+            {/* Delete button */}
+            <TouchableOpacity style={s.deleteBtn} onPress={() => handleDeleteActivity(i)} activeOpacity={0.8}>
+              <Ionicons name="trash-outline" size={15} color={BENI} />
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </ScaleDecorator>
     );
   };
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container}>
-        
-        {/* Header: Select day */}
-        <View style={styles.headerContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayList}>
+      <SafeAreaView style={s.screen}>
+
+        {/* ── Day selector header ── */}
+        <View style={s.header}>
+          <View style={s.headerTopBar} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.dayStrip}
+          >
             {editedSchedule.itinerary.map((item: any, index: number) => {
               const isSelected = selectedDayIndex === index;
               return (
-                // สร้าง View ครอบเพื่อกำหนดให้อ้างอิงตำแหน่ง (relative)
-                <View key={index} style={styles.dayChipWrapper}> 
-                  
-                  {/* ปุ่มหลักสำหรับเลือกวัน */}
+                <View key={index} style={s.dayChipWrap}>
                   <TouchableOpacity
-                    style={[styles.dayChip, isSelected && styles.selectedDayChip]}
+                    style={[s.dayChip, isSelected && s.dayChipActive]}
                     onPress={() => setSelectedDayIndex(index)}
+                    activeOpacity={0.8}
                   >
-                    <Text style={[styles.dayText, isSelected && styles.selectedDayText]}>{item.day}</Text>
-                    <Text style={[styles.dateText, isSelected && styles.selectedDateText]}>{dayjs(item.date).format('D MMM')}</Text>
+                    <Text style={[s.dayChipDay, isSelected && s.dayChipDayActive]}>{item.day}</Text>
+                    <Text style={[s.dayChipDate, isSelected && s.dayChipDateActive]}>
+                      {dayjs(item.date).format('D MMM')}
+                    </Text>
+                    {isSelected && <View style={s.dayChipDot} />}
                   </TouchableOpacity>
 
-                  {/* ปุ่มสำหรับลบ (มุมขวาบน) */}
-                  <TouchableOpacity 
-                    style={styles.deleteBadge}
-                    onPress={() => handleDeleteDay(index)} // อย่าลืมสร้างฟังก์ชันนี้นะครับ
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  {/* Delete day badge */}
+                  <TouchableOpacity
+                    style={s.deleteDayBadge}
+                    onPress={() => handleDeleteDay(index)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={styles.deleteBadgeText}>✕</Text>
+                    <Ionicons name="close" size={8} color={WHITE} />
                   </TouchableOpacity>
-
                 </View>
               );
             })}
-            
-            <TouchableOpacity 
-              style={styles.addButton} 
-              onPress={handleAddDay}
-            >
-              <Text style={styles.addButtonText}>+ Add</Text>
+
+            {/* Add day button */}
+            <TouchableOpacity style={s.addDayBtn} onPress={handleAddDay} activeOpacity={0.8}>
+              <Ionicons name="add" size={14} color={KINCHA_LIGHT} />
+              <Text style={s.addDayText}>Add Day</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
 
-        {/* Body: List of activities  {dayjs(dayKeys[selectedDay - 1]).format('D MMMM YYYY')} */}
-        
-          <View style={styles.bodytop}>
-              <View style={styles.dayHeaderRow}>
-              <Text style={styles.dayTitle}> {currentDay.day} - {dayjs(currentDay.date).format('D MMM YY')}</Text>
-              
-              <TouchableOpacity onPress={handleAddActivity} style={styles.addButton}>
-                  <Ionicons name="add-circle" size={24} color="#28a745" />
-                  <Text style={styles.addButtonText}>Add Activity</Text>
-              </TouchableOpacity>
-              </View>
+        {/* ── Day title + Add activity ── */}
+        <View style={s.dayTitleRow}>
+          <View style={s.dayTitleLeft}>
+            <View style={s.dayTitleBar} />
+            <Text style={s.dayTitle}>{currentDay.day}</Text>
+            <Text style={s.dayDate}>{dayjs(currentDay.date).format('D MMM YYYY')}</Text>
           </View>
 
-
-         <View style={styles.bodyContainer}>
-            <DraggableFlatList
-              data={currentDay.schedule}
-              onDragEnd={handleDragEnd} // Callback for drag end
-              keyExtractor={(item, index) => `draggable-item-${index}`}
-              renderItem={renderDraggableItem} // Use created component
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 80 }}
-            />
-
-            {showTimePicker && (
-              <DateTimePicker
-                value={tempDate}
-                mode="time"
-                is24Hour={true}
-                display="default"
-                onChange={onTimeChange}
-              />
-            )}
-        </View>
-
-        {/* Footer: Save button */}
-        <View style={styles.footerContainer}>
-          <TouchableOpacity onPress={confirmPlan} style={styles.confirmButton}>
-            <Text style={styles.confirmButtonText}>Save Changes</Text>
+          <TouchableOpacity style={s.addActivityBtn} onPress={openAddSheet} activeOpacity={0.8}>
+            <Ionicons name="add-circle-outline" size={14} color={WASHI} />
+            <Text style={s.addActivityText}>Add</Text>
           </TouchableOpacity>
         </View>
 
-       {isSearchVisible && (
-        <View style={styles.searchOverlayAbsolute}>
-          <SafeAreaView style={{ flex: 1 }}>
-            <View style={styles.searchHeader}>
-              <Text style={styles.searchTitle}>Find a place</Text>
-              <TouchableOpacity onPress={() => setIsSearchVisible(false)}>
-                <Ionicons name="close" size={28} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.autocompleteContainer}>
-              <GooglePlacesAutocomplete
-                placeholder='Type place name...'
-                onPress={onPlaceSelected}
-                query={{
-                  key: GOOGLE_API_KEY,
-                  language: 'en',
-                  components: 'country:jp', 
-                }}
-                fetchDetails={true}
-                debounce={400} 
-                minLength={2} 
-                nearbyPlacesAPI="GooglePlacesSearch" 
-                GooglePlacesSearchQuery={{
-                  rankby: 'prominence'
-                }}
-                styles={{
-                  textInput: styles.searchInput,
-                  listView: {
-                    // ✅ ลบ position: 'absolute' ออก เพื่อไม่ให้บั๊กหาย
-                    backgroundColor: 'white',
-                    borderRadius: 5,
-                    elevation: 5,
-                    borderWidth: 1,
-                    borderColor: '#eee',
-                    flex: 1, // ดันให้เต็มจอ
-                  },
-                  container: { flex: 1 },
-                  row: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-                  description: { color: '#666', fontSize: 14 }
-                }}
-                enablePoweredByContainer={false}
-                onFail={(error) => {
-                  console.error("Google Places Error:", error);
-                  showCustomAlert("Error", "No results found. Please try again", false);
-                }}
-              />
-            </View>
-          </SafeAreaView>
+        {/* Kincha divider */}
+        <View style={s.divRow}>
+          <View style={s.divLine} />
+          <Text style={s.divDot}>✦</Text>
+          <View style={s.divLine} />
         </View>
-      )}
-      </SafeAreaView>
 
-        {/* ----------------------------------------------------------- */}
-        {/* 2. Loading Modal (ตอนกดบันทึก) */}
-        {/* ----------------------------------------------------------- */}
-        <Modal transparent={true} animationType="fade" visible={saving} onRequestClose={()=>{}}>
-          <View style={styles.loadingOverlay}>
-            <View style={styles.loadingBox}>
-              <LottieView
-                source={require('@/assets/images/Loading.json')}
-                autoPlay
-                loop
-                style={{ width: 150, height: 150 }}
-              />
-              <Text style={[styles.loadingText, { marginTop: -20 }]}>Saving...</Text>
-            </View>
-          </View>
-        </Modal>
+        {/* ── Draggable list ── */}
+        <View style={s.listWrap}>
+          <DraggableFlatList
+            data={currentDay.schedule}
+            onDragEnd={handleDragEnd}
+            keyExtractor={(item, index) => `item-${index}`}
+            renderItem={renderDraggableItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
+            ListEmptyComponent={
+              <View style={s.emptyWrap}>
+                <Ionicons name="calendar-outline" size={32} color={INK_30} />
+                <Text style={s.emptyText}>No activities yet</Text>
+                <Text style={s.emptySubText}>Tap "Add" to add a place</Text>
+              </View>
+            }
+          />
 
-        {/* ----------------------------------------------------------- */}
-        {/* 3. Custom Alert Modal (แสดงตอนโหลดเสร็จ หรือ เกิด Error) */}
-        {/* ----------------------------------------------------------- */}
-        <Modal visible={alertConfig.visible} transparent animationType="fade">
-          <View style={styles.alertOverlay}>
-            <View style={styles.alertCard}>
-              
-              {alertConfig.isSuccess ? (
-                <ApproveAnimation size={120} loop={false} />
-              ) : (
-                <WrongAnimation size={120} loop={false} />
+          {showTimePicker && (
+            <DateTimePicker
+              value={tempDate}
+              mode="time"
+              is24Hour
+              display="default"
+              onChange={onTimeChange}
+            />
+          )}
+        </View>
+
+        {/* ── Save footer ── */}
+        <View style={s.footer}>
+          <TouchableOpacity style={s.saveBtn} onPress={confirmPlan} disabled={saving} activeOpacity={0.85}>
+            <Ionicons name="checkmark-circle-outline" size={16} color={WASHI} />
+            <Text style={s.saveBtnText}>Save Changes</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Add Activity Sheet ── */}
+        {addMode !== null && (
+          <View style={s.searchOverlay}>
+            <SafeAreaView style={{ flex: 1 }}>
+              <View style={s.searchTopBar} />
+
+              {/* Header */}
+              <View style={s.searchHeaderRow}>
+                <View style={s.searchHeaderLeft}>
+                  {addMode !== 'choose' && (
+                    <TouchableOpacity onPress={() => setAddMode('choose')} style={{ marginRight: 8 }}>
+                      <Ionicons name="arrow-back" size={18} color={WASHI} />
+                    </TouchableOpacity>
+                  )}
+                  <View style={s.searchHeaderAccent} />
+                  <Text style={s.searchHeaderTitle}>
+                    {addMode === 'choose' ? 'Add Activity' : addMode === 'manual' ? 'Manual Entry' : 'Search Place'}
+                  </Text>
+                </View>
+                <TouchableOpacity style={s.searchCloseBtn} onPress={() => setAddMode(null)}>
+                  <Ionicons name="close" size={16} color={WASHI} />
+                </TouchableOpacity>
+              </View>
+
+              {/* ── Time picker row (shared) ── */}
+              <View style={s.addTimeRow}>
+                <Ionicons name="time-outline" size={14} color={BENI} />
+                <Text style={s.addTimeLabel}>Time</Text>
+                <TouchableOpacity
+                  style={s.addTimePill}
+                  onPress={() => setShowAddTimePicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.addTimePillText}>{addTime}</Text>
+                  <Ionicons name="chevron-down" size={12} color={KINCHA_LIGHT} />
+                </TouchableOpacity>
+              </View>
+              {showAddTimePicker && (
+                <DateTimePicker
+                  value={(() => { const d = new Date(); const [hh, mm] = addTime.split(':').map(Number); d.setHours(hh); d.setMinutes(mm); return d; })()}
+                  mode="time" is24Hour display="default"
+                  onChange={handleAddTimePicked}
+                />
               )}
 
-              <Text style={styles.alertTitle}>{alertConfig.title}</Text>
-              <Text style={styles.alertMessage}>{alertConfig.message}</Text>
+              <View style={s.divRow} />
 
-              <TouchableOpacity style={styles.alertBtn} onPress={closeAlert} activeOpacity={0.8}>
-                <LinearGradient 
-                  colors={alertConfig.isSuccess ? ['#66BB6A', '#43A047'] : ['#FFA0B4', '#FF526C']} 
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} 
-                  style={styles.alertBtnGradient}
-                >
-                  <Text style={styles.alertBtnText}>OK</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+              {/* ── Mode: Choose ── */}
+              {addMode === 'choose' && (
+                <View style={s.chooseWrap}>
+                  <TouchableOpacity style={s.chooseCard} onPress={() => setAddMode('manual')} activeOpacity={0.85}>
+                    <View style={s.chooseIcon}>
+                      <Ionicons name="create-outline" size={22} color={BENI} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.chooseTitle}>Manual Entry</Text>
+                      <Text style={s.chooseSub}>Type activity name yourself</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={INK_30} />
+                  </TouchableOpacity>
 
-            </View>
+                  <TouchableOpacity style={s.chooseCard} onPress={() => setAddMode('place')} activeOpacity={0.85}>
+                    <View style={[s.chooseIcon, { backgroundColor: 'rgba(184,150,62,0.08)' }]}>
+                      <Ionicons name="location-outline" size={22} color={KINCHA} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.chooseTitle}>Search Place</Text>
+                      <Text style={s.chooseSub}>Find via Google Places</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={INK_30} />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* ── Mode: Manual ── */}
+              {addMode === 'manual' && (
+                <View style={s.manualWrap}>
+                  <Text style={s.manualLabel}>Activity Name</Text>
+                  <TextInput
+                    style={s.manualInput}
+                    placeholder="e.g. Lunch at Tsukiji Market"
+                    placeholderTextColor={INK_30}
+                    value={addActivityName}
+                    onChangeText={setAddActivityName}
+                    autoFocus
+                    selectionColor={BENI}
+                    multiline
+                    textAlignVertical="top"
+                  />
+                  <TouchableOpacity
+                    style={[s.manualAddBtn, !addActivityName.trim() && s.manualAddBtnDisabled]}
+                    onPress={commitManualAdd}
+                    disabled={!addActivityName.trim()}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="add-circle-outline" size={15} color={WASHI} />
+                    <Text style={s.manualAddBtnText}>Add Activity</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* ── Mode: Place search ── */}
+              {addMode === 'place' && (
+                <View style={s.searchBody}>
+                  <GooglePlacesAutocomplete
+                    placeholder="Search place name..."
+                    onPress={onPlaceSelected}
+                    query={{ key: GOOGLE_API_KEY, language: 'en', components: 'country:jp' }}
+                    fetchDetails debounce={400} minLength={2}
+                    nearbyPlacesAPI="GooglePlacesSearch"
+                    styles={{
+                      textInputContainer: { marginBottom: 8 },
+                      textInput: { backgroundColor: WASHI_DARK, borderRadius: 99, paddingHorizontal: 16, height: 44, fontSize: 14, fontFamily: 'NotoSansJP_400Regular', color: SUMI, borderWidth: 0 },
+                      listView: { backgroundColor: WHITE, borderRadius: 12, borderWidth: 1, borderColor: INK_12, overflow: 'hidden' },
+                      row: { padding: 14, borderBottomWidth: 0.5, borderBottomColor: INK_12 },
+                      description: { fontSize: 13, fontFamily: 'NotoSansJP_400Regular', color: SUMI },
+                    }}
+                    enablePoweredByContainer={false}
+                    onFail={() => showCustomAlert('Error', 'No results found. Please try again', false)}
+                  />
+                </View>
+              )}
+            </SafeAreaView>
           </View>
-        </Modal>
+        )}
+      </SafeAreaView>
+
+      {/* ── Saving modal ── */}
+      <Modal transparent animationType="fade" visible={saving}>
+        <View style={m.overlay}>
+          <View style={m.card}>
+            <View style={m.topBar} />
+            <LottieView
+              source={require('@/assets/images/Loading.json')}
+              autoPlay loop
+              style={{ width: 130, height: 130 }}
+            />
+            <Text style={m.title}>Saving...</Text>
+          </View>
+        </View>
+      </Modal>
 
     </GestureHandlerRootView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  headerContainer: {
-    paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2,
-  },
-  dayList: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
-  dayChip: {
-    width: 60, height: 60, backgroundColor: '#F5F5F5', borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'transparent',
-  },
-  selectedDayChip: { backgroundColor: '#FFF5E0', borderColor: '#FFA500' },
-  dayText: { fontSize: 12, fontWeight: 'bold', color: '#666' },
-  selectedDayText: { color: '#FFA500' },
-  dateText: { fontSize: 10, color: '#999' },
-  selectedDateText: { color: '#FFA500' },
-  
-  dayHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 15,
-    marginBottom: 16,
-    marginHorizontal: 16
-  },
-  dayTitle: { fontSize: 20, fontWeight: "bold", color: '#333' },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  addButtonText: { color: '#28a745', fontWeight: 'bold', marginLeft: 4, fontSize: 14 },
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: WASHI },
 
-  // ✅ Style for card rows + delete button
-  cardContainer: {
-    flexDirection: 'row',
+  // Loading
+  loadingScreen: { flex: 1, backgroundColor: WASHI, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  loadingScreenText: { fontSize: 15, fontFamily: 'ShipporiMincho_700Bold', color: SUMI },
+
+  // Header
+  header: { backgroundColor: SUMI },
+  headerTopBar: { height: 3, backgroundColor: BENI },
+  dayStrip: { paddingHorizontal: 16, paddingVertical: 12, gap: 8, alignItems: 'center' },
+
+  // Day chip
+  dayChipWrap: { position: 'relative' },
+  dayChip: {
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 14, backgroundColor: 'rgba(250,245,236,0.1)',
+    minWidth: 64, borderWidth: 1, borderColor: 'rgba(250,245,236,0.15)',
+  },
+  dayChipActive: {
+    backgroundColor: WASHI, borderColor: WASHI,
+    shadowColor: WASHI, shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+  dayChipDay: { fontSize: 12, fontFamily: 'NotoSansJP_700Bold', color: 'rgba(250,245,236,0.6)' },
+  dayChipDayActive: { color: SUMI },
+  dayChipDate: { fontSize: 10, fontFamily: 'NotoSansJP_400Regular', color: 'rgba(250,245,236,0.4)', marginTop: 1 },
+  dayChipDateActive: { color: INK_60 },
+  dayChipDot: {
+    position: 'absolute', bottom: -1, left: '50%',
+    width: 4, height: 4, borderRadius: 2, backgroundColor: BENI,
+    transform: [{ translateX: -2 }],
+  },
+  deleteDayBadge: {
+    position: 'absolute', top: 0, right: -3,
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: BENI, alignItems: 'center', justifyContent: 'center',
+    zIndex: 10,
+  },
+  addDayBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14,
+    borderWidth: 1, borderColor: KINCHA, backgroundColor: 'rgba(184,150,62,0.1)',
+  },
+  addDayText: { fontSize: 11, fontFamily: 'NotoSansJP_700Bold', color: KINCHA_LIGHT },
+
+  // Day title row
+  dayTitleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8,
+  },
+  dayTitleLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dayTitleBar: { width: 3, height: 18, backgroundColor: BENI, borderRadius: 99 },
+  dayTitle: { fontSize: 16, fontFamily: 'ShipporiMincho_700Bold', color: SUMI },
+  dayDate: { fontSize: 11, fontFamily: 'NotoSansJP_400Regular', color: INK_30, marginLeft: 4 },
+  addActivityBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: BENI, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99,
+    shadowColor: BENI, shadowOpacity: 0.25, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+  addActivityText: { fontSize: 12, fontFamily: 'NotoSansJP_700Bold', color: WASHI },
+
+  // Divider
+  divRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 4 },
+  divLine: { flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.3 },
+  divDot: { fontSize: 7, color: KINCHA, marginHorizontal: 8, opacity: 0.45 },
+
+  // List
+  listWrap: { flex: 1, paddingHorizontal: 16 },
+
+  // Draggable card
+  cardWrap: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    marginBottom: 4, gap: 10,
+  },
+  cardWrapActive: { opacity: 0.85 },
+
+  // Time column
+  cardTimeCol: { alignItems: 'center', paddingTop: 6, width: 46 },
+  timeBubble: {
+    width: 44, paddingVertical: 5,
+    backgroundColor: SUMI, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  timeBubbleText: { fontSize: 11, fontFamily: 'NotoSansJP_700Bold', color: WASHI, letterSpacing: 0.2 },
+  timeConnector: { width: 1.5, flex: 1, minHeight: 20, backgroundColor: INK_12, marginTop: 3 },
+
+  // Card
+  card: {
+    flex: 1, backgroundColor: WHITE,
+    borderRadius: 14, borderWidth: 1, borderColor: INK_12,
+    padding: 12, marginBottom: 8,
+    shadowColor: SUMI, shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  cardActive: { borderColor: KINCHA, borderWidth: 1.5, shadowColor: KINCHA, shadowOpacity: 0.15, elevation: 3 },
+  dragHandle: { paddingRight: 4 },
+  cardInner: { flex: 1 },
+  cardLabel: { fontSize: 9, fontFamily: 'NotoSansJP_700Bold', color: INK_30, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 5 },
+  cardInput: {
+    fontSize: 13, fontFamily: 'NotoSansJP_400Regular', color: SUMI,
+    backgroundColor: WASHI_DARK, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 8,
+    borderWidth: 1, borderColor: INK_12,
+    minHeight: 40,
+  },
+  inputFocused: { borderColor: BENI, borderWidth: 1.5 },
+  deleteBtn: {
+    width: 28, height: 28, borderRadius: 99,
+    backgroundColor: 'rgba(192,57,43,0.07)',
+    borderWidth: 1, borderColor: 'rgba(192,57,43,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Empty
+  emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 8 },
+  emptyText: { fontSize: 14, fontFamily: 'NotoSansJP_500Medium', color: INK_30 },
+  emptySubText: { fontSize: 12, fontFamily: 'NotoSansJP_400Regular', color: INK_30 },
+
+  // Footer
+  footer: {
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20,
+    backgroundColor: WASHI,
+    borderTopWidth: 1, borderTopColor: INK_12,
+  },
+  saveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: BENI, paddingVertical: 14, borderRadius: 99,
+    shadowColor: BENI, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5,
+  },
+  saveBtnText: { fontSize: 15, fontFamily: 'NotoSansJP_700Bold', color: WASHI, letterSpacing: 0.3 },
+
+  // Search overlay
+  searchOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: WASHI, zIndex: 9999, elevation: 9999,
+  },
+  searchTopBar: { height: 3, backgroundColor: BENI },
+  searchHeaderRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
+    backgroundColor: SUMI,
+  },
+  searchHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchHeaderAccent: { width: 3, height: 16, backgroundColor: BENI, borderRadius: 99 },
+  searchHeaderTitle: { fontSize: 16, fontFamily: 'ShipporiMincho_700Bold', color: WASHI },
+  searchCloseBtn: {
+    width: 28, height: 28, borderRadius: 99,
+    backgroundColor: 'rgba(250,245,236,0.15)', alignItems: 'center', justifyContent: 'center',
+  },
+  searchBody: { flex: 1, padding: 16 },
+
+  // Add time row
+  addTimeRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: WASHI,
+  },
+  addTimeLabel: { fontSize: 13, fontFamily: 'NotoSansJP_500Medium', color: INK_60, flex: 1 },
+  addTimePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: SUMI, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99,
+  },
+  addTimePillText: { fontSize: 14, fontFamily: 'NotoSansJP_700Bold', color: WASHI, letterSpacing: 0.5 },
+
+  // Choose mode
+  chooseWrap: { flex: 1, padding: 16, gap: 12 },
+  chooseCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: WHITE, borderRadius: 16,
+    padding: 16, borderWidth: 1, borderColor: INK_12,
+    shadowColor: SUMI, shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1,
+  },
+  chooseIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: BENI_LIGHT, alignItems: 'center', justifyContent: 'center',
+  },
+  chooseTitle: { fontSize: 14, fontFamily: 'NotoSansJP_700Bold', color: SUMI },
+  chooseSub: { fontSize: 11, fontFamily: 'NotoSansJP_400Regular', color: INK_30, marginTop: 2 },
+
+  // Manual mode
+  manualWrap: { flex: 1, padding: 16 },
+  manualLabel: { fontSize: 10, fontFamily: 'NotoSansJP_700Bold', color: INK_30, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8 },
+  manualInput: {
+    backgroundColor: WHITE, borderRadius: 14, borderWidth: 1.2, borderColor: INK_12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, fontFamily: 'NotoSansJP_400Regular', color: SUMI,
+    minHeight: 90, marginBottom: 16,
+  },
+  manualAddBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    backgroundColor: BENI, paddingVertical: 14, borderRadius: 99,
+    shadowColor: BENI, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4,
+  },
+  manualAddBtnDisabled: { backgroundColor: WASHI_DARK, shadowOpacity: 0, elevation: 0 },
+  manualAddBtnText: { fontSize: 14, fontFamily: 'NotoSansJP_700Bold', color: WASHI },
+});
+
+// ─── Modal styles ─────────────────────────────────────────────────────────────
+const m = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(28,20,16,0.6)',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    padding: 32,
   },
   card: {
-    position: 'relative',
-    flex: 1,
-    padding: 16, 
-    backgroundColor: "#fff", 
-    borderRadius: 12, 
-    borderWidth: 1, 
-    borderColor: '#EEEEEE',
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2,
+    width: '85%', maxWidth: 300,
+    backgroundColor: WASHI, borderRadius: 24, overflow: 'hidden',
+    alignItems: 'center', paddingHorizontal: 24, paddingBottom: 24,
+    shadowColor: SUMI, shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 10,
   },
-  deleteButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: 'white',
-    borderRadius: 15,
-    zIndex: 10,
-  },
-
-  bodyContainer: { flex: 1, paddingHorizontal: 16  },
-  bodytop: { paddingTop: 16},
-  inputGroup: { marginBottom: 10 },
-  label: { fontSize: 14, color: '#444', marginBottom: 6, fontWeight: "600" },
-  input: { borderWidth: 1, borderColor: "#E0E0E0", borderRadius: 8, padding: 10, fontSize: 16, backgroundColor: '#FAFAFA', color: '#333' },
-  
-  footerContainer: {
-    padding: 16, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#eee', paddingBottom: 20, 
-  },
-  confirmButton: {
-    backgroundColor: '#28a745', paddingVertical: 14, borderRadius: 12, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3, elevation: 4,
-  },
-  confirmButtonText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-
-  searchModalContainer: {
-    flex: 1,
-    zIndex: 1000,
-    backgroundColor: 'white',
-  },
-  searchHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  searchTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  autocompleteContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
-  },
-  timeInputBox: {
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 8,
-    padding: 10,
-    backgroundColor: '#FAFAFA',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  timeText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  loadingOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingBox: {
-    backgroundColor: 'white',
-    padding: 30,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 200, // กำหนดขนาดขั้นต่ำให้กล่องดูสวย
-  },
-  loadingText: { 
-    marginTop: 16, 
-    fontWeight: '600', 
-    color: '#333', 
-    fontSize: 16 
-  },
-  dragHandleIcon: {
-    position: 'absolute',
-    left: 8,
-    top: '50%',
-    marginTop: -10, // Center vertically
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  // --- Custom Alert Styles ---
- alertOverlay: {
-  position: 'absolute',
-  top: 0, left: 0, right: 0, bottom: 0,
-  justifyContent: 'center',
-  alignItems: 'center',
-},
-  alertCard: {
-    width: '100%',
-    maxWidth: 350, // จำกัดไม่ให้กล่องกว้างเกินไปในหน้าจอใหญ่ๆ
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#FF6B81',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  alertTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#4A3B3D',
-    marginTop: 10,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  alertMessage: {
-    fontSize: 15,
-    color: '#7A6B6D',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  alertBtn: {
-    width: '100%',
-    borderRadius: 16,
-    shadowColor: '#FF526C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  alertBtnGradient: {
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  alertBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  searchOverlayAbsolute: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'white',
-    zIndex: 9999, // ให้ทับทุกอย่างบนหน้าจอ
-    elevation: 9999, // สำหรับ Android
-  },
-  dayChipWrapper: {
-    position: 'relative',
-    marginRight: 10, // ย้าย margin มาไว้ที่ wrapper แทน (ถ้ามีอยู่ใน dayChip เดิม)
-    // padding: 5, // อาจจะเพิ่ม padding ถ้ารู้สึกว่าปุ่มลบมันชิดขอบจอเกินไป
-  },
-  deleteBadge: {
-    position: 'absolute',
-    top: 0,    
-    right: -4,
-    backgroundColor: '#FF3B30', 
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10, 
-    elevation: 3, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1.41,
-  },
-  deleteBadgeText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-    lineHeight: 12,
-  },
+  topBar: { height: 3, backgroundColor: BENI, width: '100%', marginBottom: 8 },
+  title: { fontSize: 15, fontFamily: 'ShipporiMincho_700Bold', color: SUMI, marginTop: 4, textAlign: 'center' },
 });

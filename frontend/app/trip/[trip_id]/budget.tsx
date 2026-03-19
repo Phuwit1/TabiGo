@@ -1,19 +1,80 @@
 import React from 'react';
-import { View, Text, StyleSheet, ImageBackground, TouchableOpacity, FlatList, TextInput, Modal, Animated } from 'react-native';
-import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import {
+  View, Text, StyleSheet, ImageBackground, TouchableOpacity,
+  FlatList, TextInput, Modal, Animated, ScrollView,
+} from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '@/api.js'
+import { API_URL } from '@/api.js';
 
-const categories: { name: string; icon: React.ComponentProps<typeof FontAwesome>['name'] }[] = [
-  { name: 'อาหาร', icon: 'cutlery' },
-  { name: 'เดินทาง', icon: 'bus' },
-  { name: 'ช้อปปิ้ง', icon: 'shopping-bag' },
-  { name: 'ที่พัก', icon: 'bed' },
+// ─── Japanese Palette ─────────────────────────────────────────────────────────
+const SUMI         = '#1C1410';   // sumi ink
+const BENI         = '#C0392B';   // beni vermillion
+const BENI_LIGHT   = '#E74C3C';
+const SAKURA       = '#F2C9D0';   // sakura blush
+const WASHI        = '#FAF5EC';   // washi paper cream
+const WASHI_DARK   = '#EDE5D8';
+const KINCHA       = '#B8963E';   // kincha gold
+const KINCHA_LIGHT = '#D4AF55';
+const INK_60       = 'rgba(28,20,16,0.6)';
+const INK_20       = 'rgba(28,20,16,0.12)';
+const WHITE        = '#FFFFFF';
+const ERROR        = '#C0392B';
+
+// ─── Sakura petal decoration ──────────────────────────────────────────────────
+const SakuraPetal = ({ style }: { style?: any }) => (
+  <Text style={[{ fontSize: 16, opacity: 0.18 }, style]}>🌸</Text>
+);
+
+// ─── Gold divider ─────────────────────────────────────────────────────────────
+const WashiDivider = () => (
+  <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 10 }}>
+    <View style={{ flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.4 }} />
+    <Text style={{ fontSize: 9, color: KINCHA, marginHorizontal: 8, opacity: 0.55 }}>✦</Text>
+    <View style={{ flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.4 }} />
+  </View>
+);
+
+type CategoryType = 'expense' | 'income';
+
+interface Category {
+  name: string;
+  icon: string;         // Ionicons name
+  iconLib: 'ion' | 'mci'; // which icon library
+  color: string;        // badge accent color
+  type: CategoryType;
+}
+
+const EXPENSE_CATEGORIES: Category[] = [
+  { name: 'Food',        icon: 'restaurant',          iconLib: 'ion', color: '#E67E22', type: 'expense' },
+  { name: 'Transport',   icon: 'airplane',             iconLib: 'ion', color: '#2980B9', type: 'expense' },
+  { name: 'Lodging',     icon: 'bed',                  iconLib: 'ion', color: '#8E44AD', type: 'expense' },
+  { name: 'Shopping',    icon: 'bag-handle',           iconLib: 'ion', color: '#C0392B', type: 'expense' },
+  { name: 'Activities',  icon: 'ticket',               iconLib: 'ion', color: '#16A085', type: 'expense' },
+  { name: 'Tour',        icon: 'map',                  iconLib: 'ion', color: '#27AE60', type: 'expense' },
+  { name: 'Cafe',        icon: 'cafe',                 iconLib: 'ion', color: '#A0522D', type: 'expense' },
+  { name: 'Health',      icon: 'medkit',               iconLib: 'ion', color: '#E74C3C', type: 'expense' },
+  { name: 'SIM / WiFi',  icon: 'wifi',                 iconLib: 'ion', color: '#2ECC71', type: 'expense' },
+  { name: 'Visa / Docs', icon: 'document-text',        iconLib: 'ion', color: '#7F8C8D', type: 'expense' },
+  { name: 'Insurance',   icon: 'shield-checkmark',     iconLib: 'ion', color: '#1ABC9C', type: 'expense' },
+  { name: 'Taxi / Grab', icon: 'car',                  iconLib: 'ion', color: '#F39C12', type: 'expense' },
+  { name: 'Baggage',     icon: 'briefcase',            iconLib: 'ion', color: '#6C5CE7', type: 'expense' },
+  { name: 'Gifts',       icon: 'gift',                 iconLib: 'ion', color: '#E91E63', type: 'expense' },
+  { name: 'Other',       icon: 'ellipsis-horizontal',  iconLib: 'ion', color: '#95A5A6', type: 'expense' },
 ];
+
+const INCOME_CATEGORIES: Category[] = [
+  { name: 'Allowance',   icon: 'cash',                 iconLib: 'ion', color: '#27AE60', type: 'income' },
+  { name: 'Transfer',    icon: 'swap-horizontal',      iconLib: 'ion', color: '#2980B9', type: 'income' },
+  { name: 'Refund',      icon: 'return-down-back',     iconLib: 'ion', color: '#16A085', type: 'income' },
+  { name: 'Income',      icon: 'wallet',               iconLib: 'ion', color: '#B8963E', type: 'income' },
+];
+
+const ALL_CATEGORIES = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES];
 
 interface Expense {
   expense_id: number;
@@ -22,122 +83,164 @@ interface Expense {
   amount: number;
 }
 
+interface FormErrors {
+  amount?: string;
+  category?: string;
+  budgetAmount?: string;
+}
 
 export default function TripBudgetScreen() {
   const { trip_id } = useLocalSearchParams();
 
-  // Modal states
   const [isModalVisible, setModalVisible] = useState(false);
-  const translateY = useRef(new Animated.Value(0)).current;
-  
-  // Form states
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  const translateY  = useRef(new Animated.Value(0)).current;
+  const fabScale    = useRef(new Animated.Value(1)).current;
+  const headerFade  = useRef(new Animated.Value(0)).current;
+  const headerSlide = useRef(new Animated.Value(-20)).current;
+
+  const [amount, setAmount]                     = useState('');
+  const [description, setDescription]           = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  //budeget edit
-  const [editBudgetAmount, setEditBudgetAmount] = useState('');
+  const [formErrors, setFormErrors]             = useState<FormErrors>({});
+
+  const [editBudgetAmount, setEditBudgetAmount]               = useState('');
   const [isEditBudgetModalVisible, setEditBudgetModalVisible] = useState(false);
-  const slideAnim = useRef(new Animated.Value(300)).current; 
-  
+  const slideAnim = useRef(new Animated.Value(300)).current;
 
-  const [trip, setTrip] = useState<any>(null);
-  const [budget, setBudget] = useState<any>(null);
-
+  const [trip, setTrip]       = useState<any>(null);
+  const [budget, setBudget]   = useState<any>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const totalSpent = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
-  //expense edit
-  const [isEditing, setIsEditing] = useState(false);
+  const totalSpent = expenses.reduce((sum, i) => sum + (i.amount || 0), 0);
+
+  const [isEditing, setIsEditing]               = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
+  const [loading, setLoading]                   = useState(true);
 
+  const cardAnims = useRef<Animated.Value[]>([]).current;
 
-  const [loading, setLoading] = useState(true);
+  const [categoryTab, setCategoryTab] = useState<CategoryType>('expense');
 
+  // ── Entrance animation ──────────────────────────────────────────────────────
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(headerFade,  { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(headerSlide, { toValue: 0, duration: 600, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  // ── Card stagger ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (expenses.length === 0) return;
+    while (cardAnims.length < expenses.length) cardAnims.push(new Animated.Value(0));
+    Animated.stagger(65,
+      expenses.map((_, i) =>
+        Animated.timing(cardAnims[i], { toValue: 1, duration: 360, delay: 0, useNativeDriver: true })
+      )
+    ).start();
+  }, [expenses.length]);
+
+  // ── Validation ──────────────────────────────────────────────────────────────
+  const isNumericOnly = (v: string) => /^\d+$/.test(v);
+
+  const handleAmountChange = (text: string) => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    setAmount(cleaned);
+    setFormErrors(prev => ({
+      ...prev,
+      amount: cleaned === '' ? 'Amount is required' : undefined,
+    }));
+  };
+
+  const handleBudgetAmountChange = (text: string) => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    setEditBudgetAmount(cleaned);
+    setFormErrors(prev => ({
+      ...prev,
+      budgetAmount: cleaned === '' ? 'Amount is required' : undefined,
+    }));
+  };
+
+  const validateExpenseForm = (): boolean => {
+    const errors: FormErrors = {};
+    if (!amount || !isNumericOnly(amount))
+      errors.amount = amount ? 'Numbers only, please' : 'Amount is required';
+    if (!selectedCategory)
+      errors.category = 'Please select a category';
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateBudgetForm = (): boolean => {
+    const errors: FormErrors = {};
+    if (!editBudgetAmount || !isNumericOnly(editBudgetAmount))
+      errors.budgetAmount = editBudgetAmount ? 'Numbers only, please' : 'Amount is required';
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // ── Data fetch ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchTrip = async () => {
       if (!trip_id) return;
-
       setLoading(true);
       try {
         const token = await AsyncStorage.getItem('access_token');
         if (!token) return;
-
         const [tripRes, budgetRes] = await Promise.all([
-          axios.get(`${API_URL}/trip_plan/${trip_id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.get(`${API_URL}/budget/plan/${trip_id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
+          axios.get(`${API_URL}/trip_plan/${trip_id}`,   { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API_URL}/budget/plan/${trip_id}`, { headers: { Authorization: `Bearer ${token}` } }),
         ]);
-
         setTrip(tripRes.data);
         setBudget(budgetRes.data);
         setExpenses(budgetRes.data?.expenses || []);
-
-      } catch (error) {
-        console.error('Error fetching trip:', error);
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
     };
-
     fetchTrip();
   }, [trip_id]);
 
+  // ── Modal controls ──────────────────────────────────────────────────────────
   const openEditBudgetModal = () => {
-  setEditBudgetAmount(String(budget));
-  setEditBudgetModalVisible(true);
-  Animated.timing(slideAnim, {
-    toValue: 0,
-    duration: 250,
-    useNativeDriver: true,
-  }).start();
-};
+    setEditBudgetAmount(String(budget?.total_budget ?? ''));
+    setFormErrors({});
+    setEditBudgetModalVisible(true);
+    Animated.timing(slideAnim, { toValue: 0, duration: 320, useNativeDriver: true }).start();
+  };
 
-const closeEditBudgetModal = () => {
-  Animated.timing(slideAnim, {
-    toValue: 300,
-    duration: 200,
-    useNativeDriver: true,
-  }).start(() => {
-    setEditBudgetModalVisible(false);
-  });
-};
-
+  const closeEditBudgetModal = () => {
+    Animated.timing(slideAnim, { toValue: 300, duration: 240, useNativeDriver: true }).start(() =>
+      setEditBudgetModalVisible(false)
+    );
+  };
 
   const openEditExpenseModal = (expense: Expense) => {
     setIsEditing(true);
-    setEditingExpenseId(expense.expense_id); // หรือ id field ของ expense
+    setEditingExpenseId(expense.expense_id);
     setAmount(expense.amount.toString());
     setDescription(expense.description);
     setSelectedCategory(expense.category);
-    setModalVisible(true);
-  };
-
-//   const openAddExpenseModal = () => {
-//     setIsEditing(false);
-//     setEditingExpenseId(null);
-//     setAmount('');
-//     setDescription('');
-//     setSelectedCategory(null);
-//     setModalVisible(true);
-// };
-
-  const openModal = () => {
-    
+    setFormErrors({});
     setModalVisible(true);
     translateY.setValue(0);
   };
 
+  const openModal = () => {
+    setIsEditing(false);
+    setEditingExpenseId(null);
+    setAmount('');
+    setDescription('');
+    setSelectedCategory(null);
+    setFormErrors({});
+    setModalVisible(true);
+    translateY.setValue(0);
+    Animated.sequence([
+      Animated.timing(fabScale, { toValue: 0.82, duration: 80, useNativeDriver: true }),
+      Animated.spring(fabScale, { toValue: 1, useNativeDriver: true }),
+    ]).start();
+  };
 
   const closeModal = () => {
-    
-   
-    Animated.timing(translateY, {
-      toValue: 300,
-      duration: 250,
-      useNativeDriver: true,
-    }).start(() => {
+    Animated.timing(translateY, { toValue: 300, duration: 260, useNativeDriver: true }).start(() => {
       setModalVisible(false);
       translateY.setValue(0);
     });
@@ -150,275 +253,357 @@ const closeEditBudgetModal = () => {
 
   const onHandlerStateChange = (event: any) => {
     const { translationY, velocityY, state } = event.nativeEvent;
-
     if (state === State.END) {
-      // ถ้าเลื่อนลงเกิน 100px หรือความเร็วเกิน 500
-      if (translationY > 100 || velocityY > 500) {
-        closeModal();
-      } else {
-        // กลับไปตำแหน่งเดิม
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-        }).start();
-      }
+      if (translationY > 100 || velocityY > 500) closeModal();
+      else Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
     }
   };
 
-//Add expense handler
-const handleSave = async () => {
-  try {
-    const token = await AsyncStorage.getItem('access_token');
-    if (!token || !trip?.budget?.budget_id) return;
+  // ── Save ────────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!validateExpenseForm()) return;
+    try {
+      const token = await AsyncStorage.getItem('access_token');
+      if (!token || !trip?.budget?.budget_id) return;
+      const data = {
+        budget_id: trip.budget.budget_id,
+        category: selectedCategory,
+        description,
+        amount: parseInt(amount, 10),
+      };
+      if (isEditing && editingExpenseId) {
+        await axios.put(`${API_URL}/expense/${editingExpenseId}`, data, { headers: { Authorization: `Bearer ${token}` } });
+        setExpenses(prev =>
+          prev.map(e =>
+            e.expense_id === editingExpenseId
+              ? { ...e, ...data, amount: parseInt(amount, 10), category: (data.category ?? e.category) as string }
+              : e
+          )
+        );
+      } else {
+        const res = await axios.post(`${API_URL}/expense`, data, { headers: { Authorization: `Bearer ${token}` } });
+        setExpenses(prev => [...prev, res.data]);
+      }
+      setModalVisible(false);
+      setAmount(''); setDescription(''); setSelectedCategory(null);
+      setEditingExpenseId(null); setIsEditing(false);
+      closeModal();
+    } catch (e) { console.error(e); }
+  };
 
-     const data = {
-      budget_id: trip.budget.budget_id,
-      category: selectedCategory,
-      description,
-      amount: parseInt(amount, 10),
-    };
-
-    
-
-    if (isEditing && editingExpenseId) {
-      // แก้ไข expense
-      await axios.put(
-        `${API_URL}/expense/${editingExpenseId}`,
-        data,
-        { headers: { Authorization: `Bearer ${token}` } }
-      ); 
-      setExpenses(prev => 
-        prev.map(expense => 
-          expense.expense_id === editingExpenseId 
-            ? { 
-                ...expense, 
-                ...data, 
-                amount: parseInt(amount, 10), 
-                category: (data.category ?? expense.category) as string
-              }
-            : expense
-        )
-      );
-    } else {
-      // เพิ่ม expense ใหม่
-      const response = await axios.post(
-        `${API_URL}/expense`,
-        data,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
-    setExpenses(prev => [...prev, response.data]);
-  }
-
-    // setExpenses(prev => [...prev, expenses.data]);
-
-    // รีเซ็ตฟอร์ม
-    setModalVisible(false);
-    setAmount('');
-    setDescription('');
-    setSelectedCategory(null);
-    setEditingExpenseId(null);
-    setIsEditing(false);
-
-    closeModal();
-  } catch (error) {
-    console.error("Error adding expense:", error);
-  }
-};
-
-   const handleSaveBudget = async () => {
-  
-    const budgetId = budget.budget_id;
-
+  const handleSaveBudget = async () => {
+    if (!validateBudgetForm()) return;
     try {
       const token = await AsyncStorage.getItem('access_token');
       if (!token) return;
-
       await axios.put(
-        `${API_URL}/budget/${budgetId}`,
-        { total_budget: parseInt(editBudgetAmount, 10),
-          plan_id : trip_id
-         },
+        `${API_URL}/budget/${budget?.budget_id}`,
+        { total_budget: parseInt(editBudgetAmount, 10), plan_id: trip_id },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
-       setBudget((prev: any) => ({
-        ...prev,
-        total_budget: Number(editBudgetAmount)
-      }));
-
+      setBudget((prev: any) => ({ ...prev, total_budget: Number(editBudgetAmount) }));
       closeEditBudgetModal();
-    } catch (error) {
-      console.error('Error updating budget:', error);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  const getCategoryIcon = (categoryName: string) => {
-    const found = categories.find(cat => cat.name === categoryName);
-    return found ? found.icon : 'question-circle'; // ถ้าไม่เจอใช้ icon question-circle
-  };
+  const getCategoryMeta = (name: string): Category =>
+    ALL_CATEGORIES.find(c => c.name === name) ?? EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1];
 
+  const renderCatIcon = (cat: Category, size = 18, color?: string) =>
+    <Ionicons name={cat.icon as any} size={size} color={color ?? cat.color} />;
+
+  const remaining       = budget ? budget.total_budget - totalSpent : 0;
+  const progressPercent = budget ? Math.min(totalSpent / budget.total_budget, 1) : 0;
+  const progressColor   = progressPercent > 0.85 ? BENI : progressPercent > 0.6 ? '#C8860A' : KINCHA;
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
   return (
-    <View style={styles.container}>
-      <ImageBackground
-        source={{ uri: 'https://picsum.photos/800/600' }}
-        style={styles.headerImage}
-      >
-        <Text style={styles.tripName}>{trip ? trip.name_group : 'กำลังโหลด...'}</Text>
+    <View style={s.container}>
 
-        <View style={styles.budgetRow}>
-          <Text style={styles.budgetText}>Budget</Text>
-          <Text style={styles.budgetAmount}> {budget ? budget.total_budget : 'กำลังโหลด...'} THB </Text>
-          <TouchableOpacity onPress={openEditBudgetModal}>
-            <Ionicons name="create-outline" size={20} color="black" />
-          </TouchableOpacity>
+      {/* ══ Hero Header ══════════════════════════════════════════════════════ */}
+      <ImageBackground source={{ uri: 'https://picsum.photos/800/600' }} style={s.heroImg}>
+        <View style={s.heroOverlay1} />
+        <View style={s.heroOverlay2} />
+
+        {/* Decorative top accent bar */}
+        <View style={s.redTopBar} />
+
+        {/* Scattered sakura petals */}
+        <SakuraPetal style={{ position: 'absolute', top: 30, right: 30, fontSize: 30 }} />
+        <SakuraPetal style={{ position: 'absolute', top: 64, right: 82, fontSize: 16 }} />
+        <SakuraPetal style={{ position: 'absolute', top: 48, left: 24, fontSize: 20 }} />
+        <SakuraPetal style={{ position: 'absolute', bottom: 95, right: 20, fontSize: 13 }} />
+
+        {/* Vertical kanji watermark */}
+        <View style={s.kanjiWatermark}>
+          <Text style={s.kanjiWatermarkText}>予</Text>
+          <Text style={s.kanjiWatermarkText}>算</Text>
+          <Text style={s.kanjiWatermarkText}>旅</Text>
         </View>
 
-         <Modal
-            visible={isEditBudgetModalVisible}
-            transparent
-            animationType="none" // ปิด animation default
-            onRequestClose={closeEditBudgetModal}
-          >
-            <TouchableOpacity
-              style={styles.modalOverlayBudget}
-              activeOpacity={1}
-              onPress={closeEditBudgetModal}
-            >
-              <Animated.View
-                style={[
-                  styles.bottomSheetBudget,
-                  { transform: [{ translateY: slideAnim }] },
-                ]}
-              >
-                <Text style={styles.modalTitleBudget}>แก้ไขงบประมาณ</Text>
-                <TextInput
-                  keyboardType="numeric"
-                  style={styles.inputBudget}
-                  value={budget ? budget.total_budget : '0'}
-                  onChangeText={setEditBudgetAmount}
-                />
-                <View style={styles.modalButtonsBudget}>
-                  <TouchableOpacity onPress={closeEditBudgetModal} style={styles.cancelButtonBudget}>
-                    <Text style={styles.cancelButtonText}>ยกเลิก</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={handleSaveBudget} style={styles.saveButtonBudget}>
-                    <Text style={styles.saveButtonText}>บันทึก</Text>
-                  </TouchableOpacity>
-                </View>
-              </Animated.View>
+        <Animated.View
+          style={[s.heroContent, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}
+        >
+          {/* Tag pill */}
+          <View style={s.tagPill}>
+            <Text style={s.tagText}>· TRIP BUDGET</Text>
+          </View>
+
+          <Text style={s.heroTripName}>{trip ? trip.name_group : '— — —'}</Text>
+
+          {/* Budget card */}
+          <View style={s.budgetCard}>
+            <View>
+              <Text style={s.budgetSubLabel}>· Total Budget</Text>
+              <Text style={s.budgetAmount}>
+                ¥ {budget ? Number(budget.total_budget).toLocaleString() : '——'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={openEditBudgetModal} style={s.editBtn}>
+              <Ionicons name="pencil" size={13} color={WASHI} />
+              <Text style={s.editBtnText}>Edit</Text>
             </TouchableOpacity>
-          </Modal>
+          </View>
+
+          {/* Progress bar */}
+          {budget && (
+            <View style={s.progressWrap}>
+              <View style={s.progressTrack}>
+                <View style={[s.progressFill, { width: `${progressPercent * 100}%` as any, backgroundColor: progressColor }]} />
+                <View style={[s.progressDot, { left: `${Math.min(progressPercent * 100 - 1.5, 97)}%` as any, backgroundColor: progressColor }]} />
+              </View>
+              <View style={s.progressMeta}>
+                <Text style={s.progressUsed}>Spent ¥{totalSpent.toLocaleString()}</Text>
+                <Text style={[s.progressLeft, { color: remaining < 0 ? SAKURA : KINCHA_LIGHT }]}>
+                  {remaining < 0 ? '⚠ ' : ''}Remaining ¥{remaining.toLocaleString()}
+                </Text>
+              </View>
+            </View>
+          )}
+        </Animated.View>
       </ImageBackground>
 
-      <View style={styles.semiCircleWrapper}>
-        <View style={styles.semiCircle}>
-          <Text style={styles.spentText}>ใช้ {totalSpent} THB</Text>
+      {/* ══ Body ════════════════════════════════════════════════════════════ */}
+      <View style={s.body}>
+        {/* Section header */}
+        <View style={s.sectionRow}>
+          <View style={s.sectionLeft}>
+            <View style={s.sectionBar} />
+            <Text style={s.sectionTitle}>Expenses</Text>
+            <Text style={s.sectionKanji}></Text>
+          </View>
+          <View style={s.countBadge}>
+            <Text style={s.countText}>{expenses.length}</Text>
+          </View>
         </View>
-      </View>
 
-      <View style={styles.curvedSection}>
-        <Text style={styles.sectionTitle}>ค่าใช้จ่าย</Text>
+        <WashiDivider />
 
         <FlatList
-            data={expenses}
-            keyExtractor={(item) => item.expense_id.toString()}
-            renderItem={({ item }) => (
-              <TouchableOpacity onPress={() => openEditExpenseModal(item)}>
-                <View style={styles.expenseItem}>
-                  <FontAwesome
-                      name={getCategoryIcon(item.category)}
-                      size={24}
-                      style={styles.expenseIcon}
-                    />
-                  <View style={styles.expenseDetail}>
-                    <Text style={styles.expenseCategory}>{item.category}</Text>
-                    <Text style={styles.expenseCreator}>
-                      {item.description || "No description"}
-                    </Text>
-                    <Text style={styles.expenseCreator}>create by Kin</Text>
+          data={expenses}
+          keyExtractor={item => item.expense_id.toString()}
+          contentContainerStyle={{ paddingBottom: 120 }}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item, index }) => {
+            while (cardAnims.length <= index) cardAnims.push(new Animated.Value(1));
+            const anim = cardAnims[index] ?? new Animated.Value(1);
+            return (
+              <Animated.View style={{
+                opacity: anim,
+                transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+              }}>
+                <TouchableOpacity onPress={() => openEditExpenseModal(item)} activeOpacity={0.8}>
+                  <View style={s.expCard}>
+                    <View style={[s.expStripe, { backgroundColor: getCategoryMeta(item.category).color }]} />
+                    <View style={[s.expIconBadge, { backgroundColor: getCategoryMeta(item.category).color + '18' }]}>
+                      {renderCatIcon(getCategoryMeta(item.category), 22)}
+                    </View>
+                    <View style={s.expBody}>
+                      <Text style={s.expCategory}>{item.category}</Text>
+                      <Text style={s.expDesc}>{item.description || 'No description'}</Text>
+                    </View>
+                    <View style={s.expRight}>
+                      <Text style={[s.expAmount, { color: getCategoryMeta(item.category).type === 'income' ? '#27AE60' : BENI }]}>
+                        {getCategoryMeta(item.category).type === 'income' ? '+' : ''}¥{Number(item.amount).toLocaleString()}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={11} color={INK_60} />
+                    </View>
                   </View>
-                  <Text style={styles.expenseAmount}>{item.amount} THB</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-          />
-
-        <TouchableOpacity style={styles.addButton} onPress={openModal}>
-          <Text style={styles.addButtonText}>+ เพิ่มค่าใช้จ่าย</Text>
-        </TouchableOpacity>
+                </TouchableOpacity>
+              </Animated.View>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={s.emptyWrap}>
+              <Text style={s.emptyKanji}></Text>
+              <Text style={s.emptyTitle}>No expenses yet</Text>
+              <Text style={s.emptySub}>Tap + to log your first expense</Text>
+            </View>
+          }
+        />
       </View>
 
-      {/* Modal สำหรับเพิ่มค่าใช้จ่าย */}
-      <Modal
-        visible={isModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeModal}
-      >
-        <View style={styles.modalOverlay}>
-          <PanGestureHandler
-            onGestureEvent={onGestureEvent}
-            onHandlerStateChange={onHandlerStateChange}
-          >
-            <Animated.View 
-              style={[
-                styles.modalContent,
-                {
-                  transform: [{ translateY: translateY }]
+      {/* ══ FAB ═════════════════════════════════════════════════════════════ */}
+      <Animated.View style={[s.fabWrap, { transform: [{ scale: fabScale }] }]}>
+        <View style={s.fabRing} />
+        <TouchableOpacity style={s.fab} onPress={openModal} activeOpacity={0.88}>
+          <Ionicons name="add" size={27} color={WASHI} />
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* ══ Edit Budget Modal ════════════════════════════════════════════════ */}
+      <Modal visible={isEditBudgetModalVisible} transparent animationType="none" onRequestClose={closeEditBudgetModal}>
+        <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={closeEditBudgetModal}>
+          <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
+            <TouchableOpacity activeOpacity={1}>
+              <View style={s.handle} />
+              <View style={s.sheetAccentBar} />
+              <View style={s.sheetHeadRow}>
+                <Text style={s.sheetTitle}>Edit Budget</Text>
+              </View>
+              <WashiDivider />
+              <Text style={s.fieldLabel}>Amount <Text style={s.req}>*</Text></Text>
+              <View style={[s.fieldWrap, formErrors.budgetAmount ? s.fieldError : null]}>
+                <Text style={s.fieldPrefix}>¥</Text>
+                <TextInput
+                  keyboardType="numeric"
+                  style={s.fieldInput}
+                  value={editBudgetAmount}
+                  onChangeText={handleBudgetAmountChange}
+                  placeholder="e.g. 50000"
+                  placeholderTextColor={INK_60}
+                  selectionColor={BENI}
+                />
+              </View>
+              {formErrors.budgetAmount
+                ? <View style={s.errRow}><Ionicons name="alert-circle" size={13} color={ERROR} /><Text style={s.errTxt}>{formErrors.budgetAmount}</Text></View>
+                : <View style={{ height: 14 }} />
+              }
+              <View style={s.btnRow}>
+                <TouchableOpacity onPress={closeEditBudgetModal} style={s.cancelBtn}>
+                  <Text style={s.cancelTxt}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleSaveBudget} style={s.saveBtn}>
+                  <Text style={s.saveTxt}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ══ Add / Edit Expense Modal ═════════════════════════════════════════ */}
+      <Modal visible={isModalVisible} animationType="slide" transparent onRequestClose={closeModal}>
+        <View style={s.overlay}>
+          <PanGestureHandler onGestureEvent={onGestureEvent} onHandlerStateChange={onHandlerStateChange}>
+            <Animated.View style={[s.expSheet, { transform: [{ translateY: translateY }] }]}>
+              <View style={s.handle} />
+              <View style={s.sheetAccentBar} />
+
+              <View style={s.sheetHeadRow}>
+                <Text style={[s.sheetTitle, { flex: 1 }]}>{isEditing ? 'Edit Expense' : 'Add Expense'}</Text>
+                <TouchableOpacity onPress={closeModal} style={{ padding: 4 }}>
+                  <Ionicons name="close" size={18} color={INK_60} />
+                </TouchableOpacity>
+              </View>
+
+              <WashiDivider />
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Amount */}
+                <Text style={s.fieldLabel}>Amount <Text style={s.req}>*</Text></Text>
+                <View style={[s.fieldWrap, formErrors.amount ? s.fieldError : null]}>
+                  <Text style={s.fieldPrefix}>¥</Text>
+                  <TextInput
+                    placeholder="e.g. 1200"
+                    keyboardType="numeric"
+                    value={amount}
+                    onChangeText={handleAmountChange}
+                    style={s.fieldInput}
+                    placeholderTextColor={INK_60}
+                    selectionColor={BENI}
+                  />
+                </View>
+                {formErrors.amount
+                  ? <View style={s.errRow}><Ionicons name="alert-circle" size={13} color={ERROR} /><Text style={s.errTxt}>{formErrors.amount}</Text></View>
+                  : <View style={{ height: 10 }} />
                 }
-              ]}
-            >
-              {/* Drag Handle */}
-              <View style={styles.dragHandle} />
-              
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>เพิ่มค่าใช้จ่าย</Text>
-                <TouchableOpacity onPress={closeModal} style={styles.closeButton}>
-                  <Ionicons name="close" size={24} color="#666" />
-                </TouchableOpacity>
-              </View>
 
-              <TextInput
-                placeholder="จำนวนเงิน"
-                keyboardType="numeric"
-                value={amount}
-                onChangeText={setAmount}
-                style={styles.input}
-              />
+                {/* Description */}
+                <Text style={s.fieldLabel}>Note</Text>
+                <View style={s.fieldWrap}>
+                  <TextInput
+                    placeholder="e.g. Ramen, Train fare..."
+                    value={description}
+                    onChangeText={setDescription}
+                    style={[s.fieldInput, { flex: 1 }]}
+                    placeholderTextColor={INK_60}
+                    selectionColor={BENI}
+                  />
+                </View>
 
-              <TextInput
-                placeholder="คำอธิบาย"
-                value={description}
-                onChangeText={setDescription}
-                style={styles.input}
-              />
+                <View style={{ height: 14 }} />
 
-              <Text style={styles.categoryLabel}>เลือกหมวดหมู่</Text>
-              <View style={styles.categoryContainer}>
-                {categories.map((cat, index) => (
+                {/* Category */}
+                <Text style={s.fieldLabel}>Category <Text style={s.req}>*</Text></Text>
+
+                {/* Expense / Income tab */}
+                <View style={s.catTabRow}>
                   <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.categoryItem,
-                      selectedCategory === cat.name && styles.selectedCategory,
-                    ]}
-                    onPress={() => setSelectedCategory(cat.name)}
+                    style={[s.catTab, categoryTab === 'expense' && s.catTabActive]}
+                    onPress={() => setCategoryTab('expense')}
                   >
-                    <FontAwesome name={cat.icon} size={24} color="#fff" />
-                    <Text style={styles.categoryText}>{cat.name}</Text>
+                    <Ionicons name="remove-circle-outline" size={14} color={categoryTab === 'expense' ? BENI : INK_60} />
+                    <Text style={[s.catTabTxt, categoryTab === 'expense' && s.catTabTxtActive]}>Expense</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
+                  <TouchableOpacity
+                    style={[s.catTab, categoryTab === 'income' && s.catTabActiveIncome]}
+                    onPress={() => setCategoryTab('income')}
+                  >
+                    <Ionicons name="add-circle-outline" size={14} color={categoryTab === 'income' ? '#27AE60' : INK_60} />
+                    <Text style={[s.catTabTxt, categoryTab === 'income' && s.catTabTxtIncome]}>Income</Text>
+                  </TouchableOpacity>
+                </View>
 
-              <View style={styles.buttonContainer}>
-                <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
-                  <Text style={styles.cancelButtonText}>ยกเลิก</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                  <Text style={styles.saveButtonText}>💾 บันทึก</Text>
-                </TouchableOpacity>
-              </View>
+                <View style={s.catGrid}>
+                  {(categoryTab === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map((cat, i) => {
+                    const active = selectedCategory === cat.name;
+                    return (
+                      <TouchableOpacity
+                        key={i}
+                        style={[s.catCell, active && { backgroundColor: cat.color, borderColor: cat.color }]}
+                        onPress={() => {
+                          setSelectedCategory(cat.name);
+                          setFormErrors(prev => ({ ...prev, category: undefined }));
+                        }}
+                        activeOpacity={0.78}
+                      >
+                        {active && <View style={s.catDot} />}
+                        <View style={[s.catIconWrap, active && { backgroundColor: 'rgba(255,255,255,0.2)' }, !active && { backgroundColor: cat.color + '18' }]}>
+                          <Ionicons name={cat.icon as any} size={20} color={active ? WHITE : cat.color} />
+                        </View>
+                        <Text style={[s.catName, active && s.catNameActive]}>{cat.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {formErrors.category
+                  ? <View style={s.errRow}><Ionicons name="alert-circle" size={13} color={ERROR} /><Text style={s.errTxt}>{formErrors.category}</Text></View>
+                  : <View style={{ height: 8 }} />
+                }
+
+                <WashiDivider />
+
+                <View style={s.btnRow}>
+                  <TouchableOpacity style={s.cancelBtn} onPress={closeModal}>
+                    <Text style={s.cancelTxt}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.saveBtn} onPress={handleSave}>
+                    <Text style={s.saveTxt}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ height: 24 }} />
+              </ScrollView>
             </Animated.View>
           </PanGestureHandler>
         </View>
@@ -427,286 +612,339 @@ const handleSave = async () => {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    position: 'relative'
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: WASHI },
+
+  // ── Hero ──
+  heroImg:     { height: 310, justifyContent: 'flex-end' },
+  heroOverlay1:{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(28,20,16,0.52)' },
+  heroOverlay2:{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(192,57,43,0.07)' },
+  redTopBar:   { position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: BENI },
+
+  kanjiWatermark: { position: 'absolute', right: 16, top: 50, alignItems: 'center' },
+  kanjiWatermarkText: {
+    fontSize: 20,
+    color: 'rgba(255,255,255,0.10)',
+    fontWeight: '900',
+    letterSpacing: 1,
+    lineHeight: 26,
   },
-  semiCircleWrapper: {
-    position: 'absolute',
-    top: 200,
-    width: '100%',
-    alignItems: 'center',
-    zIndex: 0,
+
+  heroContent: { paddingHorizontal: 22, paddingBottom: 26 },
+
+  tagPill: {
+    alignSelf: 'flex-start',
+    borderWidth: 0.8,
+    borderColor: 'rgba(255,255,255,0.32)',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 2,
+    marginBottom: 10,
   },
-  semiCircle: {  
-    width: 450,
-    height: 150,
-    marginTop: 20,
-    backgroundColor: 'white',
-    borderTopLeftRadius: 150,
-    borderTopRightRadius: 150,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-  },
-  headerImage: {
-    height: 300,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  curvedSection: {
-    flex: 1,
-    backgroundColor: '#fff',
-    marginTop: 55,
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
-  tripName: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: 'white',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  budgetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  budgetText: {
+  tagText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: 'white',
+    color: 'rgba(255,255,255,0.65)',
+    letterSpacing: 2.8,
+    fontWeight: '700',
+  },
+
+  heroTripName: {
+    fontSize: 27,
+    fontWeight: '800',
+    color: WHITE,
+    letterSpacing: 0.5,
+    marginBottom: 16,
+  },
+
+  budgetCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(250,245,236,0.09)',
+    borderLeftWidth: 3,
+    borderLeftColor: BENI,
+    borderRadius: 3,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 18,
+  },
+  budgetSubLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.48)',
+    letterSpacing: 2,
+    marginBottom: 3,
   },
   budgetAmount: {
-    fontSize: 16,
-    color: 'white',
-    fontWeight: 'bold',
+    fontSize: 30,
+    fontWeight: '900',
+    color: WHITE,
+    letterSpacing: 1,
   },
-  spentText: {
-    marginTop: 8,
-    fontSize: 16,
-    color: 'white',
-    backgroundColor: 'rgba(0,0,0,0.3)',
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(192,57,43,0.14)',
+    borderWidth: 0.8,
+    borderColor: WASHI,
     paddingHorizontal: 10,
-    paddingVertical: 2,
+    paddingVertical: 6,
+    borderRadius: 3,
+  },
+  editBtnText: { fontSize: 11, color: WASHI, fontWeight: '700', letterSpacing: 0.4 },
+
+  progressWrap:  {},
+  progressTrack: {
+    height: 5,
+    backgroundColor: 'rgba(255,255,255,0.13)',
+    borderRadius: 3,
+    overflow: 'visible',
+    position: 'relative',
+  },
+  progressFill:  { height: '100%', borderRadius: 3 },
+  progressDot:   {
+    position: 'absolute',
+    top: -3,
+    width: 11,
+    height: 11,
     borderRadius: 6,
+    borderWidth: 2,
+    borderColor: WHITE,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  expenseItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f3f3f3',
+  progressMeta:  { flexDirection: 'row', justifyContent: 'space-between', marginTop: 7 },
+  progressUsed:  { fontSize: 10, color: 'rgba(255,255,255,0.52)', letterSpacing: 0.4 },
+  progressLeft:  { fontSize: 11, fontWeight: '700', letterSpacing: 0.4 },
+
+  // ── Body ──
+  body: { flex: 1, paddingHorizontal: 20, paddingTop: 22, backgroundColor: WASHI },
+
+  sectionRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionBar:  { width: 3, height: 17, backgroundColor: BENI, borderRadius: 2 },
+  sectionTitle:{ fontSize: 15, fontWeight: '800', color: SUMI, letterSpacing: 0.3 },
+  sectionKanji:{ fontSize: 11, color: INK_60, letterSpacing: 1.5 },
+  countBadge:  {
+    backgroundColor: BENI,
+    minWidth: 24,
+    height: 24,
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  expenseIcon: {
-    marginRight: 12,
-  },
-  expenseDetail: {
-    flex: 1,
-  },
-  expenseCategory: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  expenseCreator: {
-    fontSize: 12,
-    color: '#888',
-  },
-  expenseAmount: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  addButton: {
-    backgroundColor: '#ff5c5c',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 30,
-    alignSelf: 'center',
-    marginBottom: 55,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-
- modalOverlayBudget: {
-  flex: 1,
-  backgroundColor: 'rgba(0,0,0,0.4)',
-  justifyContent: 'flex-end',
-},
-bottomSheetBudget: {
-  backgroundColor: 'white',
-  padding: 20,
-  borderTopLeftRadius: 16,
-  borderTopRightRadius: 16,
-  minHeight: 200,
-},
-modalTitleBudget: {
-  fontSize: 18,
-  fontWeight: 'bold',
-  marginBottom: 12,
-},
-inputBudget: {
-  borderWidth: 1,
-  borderColor: '#ccc',
-  borderRadius: 8,
-  padding: 10,
-  fontSize: 16,
-  marginBottom: 16,
-},
-modalButtonsBudget: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-},
-cancelButtonBudget: {
-  backgroundColor: '#ddd',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    flex: 0.45,
     alignItems: 'center',
-},
-saveButtonBudget: {
-    backgroundColor: '#2196F3',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    flex: 0.45,
-    alignItems: 'center',
-},
-
-
-
-  // Modal Styles
-  modalContainer: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
   },
-   modalButtons: {
+  countText: { fontSize: 11, fontWeight: '800', color: WHITE },
+
+  // ── Expense card ──
+  expCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    maxHeight: '80%',
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#ccc',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    marginBottom: 20,
+    backgroundColor: WHITE,
+    borderRadius: 5,
+    marginBottom: 9,
+    overflow: 'hidden',
+    shadowColor: SUMI,
+    shadowOpacity: 0.07,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  closeButton: {
-    padding: 5,
-  },
-  input: {
-    backgroundColor: '#f1f1f1',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 15,
-    fontSize: 16,
-  },
-  categoryLabel: {
-    marginBottom: 10,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  categoryContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 20,
-    flexWrap: 'wrap',
-  },
-  categoryItem: {
-    backgroundColor: '#aaa',
-    padding: 10,
-    borderRadius: 50,
+  expStripe:     { width: 3, alignSelf: 'stretch', backgroundColor: BENI },
+  expIconBadge: {
+    width: 52,
+    height: 52,
     alignItems: 'center',
-    width: 80,
-    height: 80,
-    margin: 5,
     justifyContent: 'center',
   },
-  selectedCategory: {
-    backgroundColor: '#4CAF50',
+  expBody:      { flex: 1, paddingHorizontal: 12, paddingVertical: 13 },
+  expCategory:  { fontSize: 13, fontWeight: '700', color: SUMI, marginBottom: 2 },
+  expDesc:      { fontSize: 11, color: INK_60 },
+  expRight:     { flexDirection: 'row', alignItems: 'center', paddingRight: 12, gap: 2 },
+  expAmount:    { fontSize: 14, fontWeight: '800', color: BENI },
+
+  // ── Empty ──
+  emptyWrap:  { alignItems: 'center', paddingVertical: 58 },
+  emptyKanji: { fontSize: 60, color: INK_20, fontWeight: '900', lineHeight: 72 },
+  emptyTitle: { fontSize: 14, color: INK_60, fontWeight: '600', marginTop: 6 },
+  emptySub:   { fontSize: 11, color: INK_60, marginTop: 3, opacity: 0.55 },
+
+  // ── FAB ──
+  fabWrap: { position: 'absolute', bottom: 36, right: 22 },
+  fabRing: {
+    position: 'absolute',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 1,
+    borderColor: 'rgba(192,57,43,0.22)',
+    top: -5,
+    left: -5,
   },
-  categoryText: {
-    color: '#fff',
-    fontSize: 12,
-    marginTop: 5,
+  fab: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: BENI,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: BENI,
+    shadowOpacity: 0.48,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 10,
   },
-  buttonContainer: {
+
+  // ── Overlay ──
+  overlay: { flex: 1, backgroundColor: 'rgba(28,20,16,0.60)', justifyContent: 'flex-end' },
+
+  // ── Sheets ──
+  sheet: {
+    backgroundColor: WASHI,
+    paddingHorizontal: 22,
+    paddingBottom: 38,
+    paddingTop: 10,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  expSheet: {
+    backgroundColor: WASHI,
+    paddingHorizontal: 22,
+    paddingTop: 10,
+    paddingBottom: 0,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '88%',
+  },
+  handle:       { width: 32, height: 3, backgroundColor: INK_20, borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
+  sheetAccentBar:{ height: 1.5, backgroundColor: BENI, borderRadius: 1, marginBottom: 18, opacity: 0.55, marginHorizontal: -22 },
+  sheetHeadRow: { flexDirection: 'row', alignItems: 'baseline', gap: 9 },
+  sheetKanji:   { fontSize: 22, fontWeight: '900', color: BENI, opacity: 0.3, letterSpacing: 1 },
+  sheetTitle:   { fontSize: 16, fontWeight: '800', color: SUMI, letterSpacing: 0.2 },
+
+  // ── Form ──
+  fieldLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: INK_60,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginBottom: 7,
+    marginTop: 14,
+  },
+  req: { color: BENI },
+  fieldWrap: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  cancelButton: {
-    backgroundColor: '#ddd',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    flex: 0.45,
     alignItems: 'center',
+    backgroundColor: WHITE,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: WASHI_DARK,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  saveButton: {
-    backgroundColor: '#2196F3',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
+  fieldError: { borderColor: ERROR, borderWidth: 1.5, backgroundColor: 'rgba(192,57,43,0.03)' },
+  fieldPrefix: { fontSize: 16, fontWeight: '700', color: BENI, marginRight: 8 },
+  fieldInput:  { flex: 1, fontSize: 16, color: SUMI, padding: 0 },
+  errRow:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5, marginBottom: 2 },
+  errTxt:      { fontSize: 11, color: ERROR, fontWeight: '600' },
+
+  catGrid: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  catCell: {
+    width: '22%',
+    aspectRatio: 0.85,
+    backgroundColor: WHITE,
     borderRadius: 10,
-    flex: 0.45,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: WASHI_DARK,
+    position: 'relative',
+    gap: 2,
+    paddingVertical: 6,
   },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+  catCellActive: {},  // color applied dynamically per category
+  catDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: SAKURA,
   },
+  catIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  catEmoji:      { fontSize: 24 },
+
+  // ── Category tabs ──
+  catTabRow: {
+    flexDirection: 'row',
+    backgroundColor: WASHI_DARK,
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 12,
+    gap: 3,
+  },
+  catTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    borderRadius: 6,
+  },
+  catTabActive: {
+    backgroundColor: WHITE,
+    shadowColor: BENI,
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  catTabActiveIncome: {
+    backgroundColor: WHITE,
+    shadowColor: '#27AE60',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  catTabTxt:       { fontSize: 12, fontWeight: '700', color: INK_60 },
+  catTabTxtActive: { color: BENI },
+  catTabTxtIncome: { color: '#27AE60' },
+  catName:       { fontSize: 10, color: INK_60, fontWeight: '600' },
+  catNameActive: { color: 'rgba(255,255,255,0.88)' },
+
+  // ── Buttons ──
+  btnRow: { flexDirection: 'row', gap: 12, marginTop: 10 },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 5,
+    alignItems: 'center',
+    backgroundColor: WASHI_DARK,
+    borderWidth: 0.5,
+    borderColor: INK_20,
+  },
+  cancelTxt: { color: INK_60, fontSize: 14, fontWeight: '700' },
+  saveBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 5,
+    alignItems: 'center',
+    backgroundColor: BENI,
+    shadowColor: BENI,
+    shadowOpacity: 0.38,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  saveTxt: { color: WHITE, fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
 });

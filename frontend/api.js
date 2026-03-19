@@ -26,4 +26,5 @@ const getWebSocketUrl = () => {
 }
 
 export const API_URL = getBackendUrl();
+export const GOOGLE_API_KEY = "AIzaSyA73tpAfskui7aqX9GXabfGLU0OZ5HLC-U";
 export const WEBSOCKET_URL = getWebSocketUrl();
