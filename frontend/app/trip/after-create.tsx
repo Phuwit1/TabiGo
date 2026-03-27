@@ -9,27 +9,97 @@ import { useRouter } from 'expo-router';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { API_URL } from '@/api.js';
+import { API_URL, GOOGLE_API_KEY } from '@/api.js';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import LottieView from 'lottie-react-native';
 import ApproveAnimation from '@/components/ui/Alert/ApproveAnimation';
 import WrongAnimation from '@/components/ui/Alert/WrongAnimation';
 
-// ─── Original Japanese Palette (Elegant) ──────────────────────────────────────
-const SUMI         = '#1C1410';   // Deep ink black
-const BENI         = '#C0392B';   // Classic vermillion
-const WASHI        = '#FAF5EC';   // Paper cream
-const WASHI_DARK   = '#EDE5D8';   // Darker paper
-const KINCHA       = '#B8963E';   // Elegant gold
-const KINCHA_LIGHT = '#D4AF55';
-const WHITE        = '#FFFFFF';
-const INK_60       = 'rgba(28,20,16,0.6)';
-const INK_30       = 'rgba(28,20,16,0.3)';
-const INK_12       = 'rgba(28,20,16,0.12)';
+import { SUMI, BENI, WASHI, WASHI_DARK, KINCHA, WHITE, INK_60, INK_30, INK_12 } from '@/constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type City = { id: number; name: string };
+
+interface AttractionItem {
+  attraction_id: number;
+  name: string;
+  photo_ref: string;
+  rating: number;
+  city_name?: string;
+}
+
+// ─── PlaceChip ───────────────────────────────────────────────────────────────
+const CHIP_W = 100;
+const CHIP_H = 120;
+
+function PlaceChip({ item, selected, onPress }: {
+  item: AttractionItem;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const fallback = `https://picsum.photos/seed/${item.attraction_id}/200/200`;
+  let imgUri = fallback;
+  if (item.photo_ref?.startsWith('/static')) {
+    imgUri = `${API_URL}${item.photo_ref}`;
+  } else if (item.photo_ref?.startsWith('http')) {
+    imgUri = item.photo_ref;
+  } else if (item.photo_ref && GOOGLE_API_KEY) {
+    imgUri = `https://places.googleapis.com/v1/${item.photo_ref}/media?maxHeightPx=200&maxWidthPx=200&key=${GOOGLE_API_KEY}`;
+  }
+
+  return (
+    <TouchableOpacity style={[pc.chip, selected && pc.chipSelected]} onPress={onPress} activeOpacity={0.8}>
+      <Image source={{ uri: imgUri }} style={pc.img} resizeMode="cover" />
+      <View style={pc.scrim} />
+      {item.rating != null && (
+        <View style={pc.ratingBadge}>
+          <Ionicons name="star" size={8} color="#D4AF55" />
+          <Text style={pc.ratingText}>{item.rating.toFixed(1)}</Text>
+        </View>
+      )}
+      {selected && (
+        <View style={pc.overlay}>
+          <Ionicons name="checkmark-circle" size={26} color={WHITE} />
+        </View>
+      )}
+      <View style={pc.nameWrap}>
+        <Text style={pc.nameText} numberOfLines={2}>{item.name}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const pc = StyleSheet.create({
+  chip: {
+    width: CHIP_W, height: CHIP_H,
+    borderRadius: 10, overflow: 'hidden',
+    marginRight: 10,
+    borderWidth: 2, borderColor: 'transparent',
+    backgroundColor: WASHI_DARK,
+  },
+  chipSelected: { borderColor: BENI },
+  img:   { width: '100%', height: '100%', position: 'absolute' },
+  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(28,20,16,0.30)' },
+  ratingBadge: {
+    position: 'absolute', top: 5, right: 5,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: 'rgba(28,20,16,0.72)',
+    paddingHorizontal: 4, paddingVertical: 2, borderRadius: 3,
+  },
+  ratingText: { fontSize: 8, color: '#D4AF55', fontWeight: '800' },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(192,57,43,0.45)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  nameWrap: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(28,20,16,0.60)',
+    paddingHorizontal: 6, paddingVertical: 5,
+  },
+  nameText: { fontSize: 9, color: WHITE, fontWeight: '700', lineHeight: 13 },
+});
 
 const CLOUD_NAME    = 'dqghrasqe';
 const UPLOAD_PRESET = 'TabiGo';
@@ -88,6 +158,27 @@ export default function AICreateTrip() {
   });
 
   const [focusedField, setFocusedField]   = useState<string | null>(null);
+  const [isGroupTrip, setIsGroupTrip]     = useState(false);
+
+  // ── Place picker ─────────────────────────────────────────────────────────
+  const [allAttractions, setAllAttractions] = useState<AttractionItem[]>([]);
+  const [selectedPlaces, setSelectedPlaces] = useState<number[]>([]);
+
+  useEffect(() => {
+    axios.get(`${API_URL}/attractions/`)
+      .then(res => setAllAttractions(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {});
+  }, []);
+
+  const filteredAttractions = useMemo(() =>
+    allAttractions.filter(a => a.city_name && selectedCities.includes(a.city_name)),
+    [allAttractions, selectedCities],
+  );
+
+  useEffect(() => { setSelectedPlaces([]); }, [selectedCities]);
+
+  const togglePlace = (id: number) =>
+    setSelectedPlaces(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
 
   const showCustomAlert = (title: string, message: string, isSuccess = false, onConfirm = () => {}) =>
     setAlertConfig({ visible: true, title, message, isSuccess, onConfirm });
@@ -193,12 +284,19 @@ export default function AICreateTrip() {
         start_plan_date: toYMD(startDate),
         end_plan_date: toYMD(endDate),
         image: coverImageUrl,
+        city: selectedCities.length > 0 ? selectedCities.join(', ') : null,
       };
+      const placeNames = allAttractions
+        .filter(a => selectedPlaces.includes(a.attraction_id))
+        .map(a => a.name);
+      const llmText = triprequest + (placeNames.length > 0
+        ? `\n\nMust include these places: ${placeNames.join(', ')}`
+        : '');
       const llmBody = {
         start_date: toDDMMYYYY(startDate),
         end_date: toDDMMYYYY(endDate),
         cities: selectedCities,
-        text: triprequest,
+        text: llmText,
       };
 
       const llm = await axios.post(`${API_URL}/llm/`, llmBody, { headers });
@@ -214,6 +312,14 @@ export default function AICreateTrip() {
       }
 
       await axios.post(`${API_URL}/trip_schedule`, { plan_id: planId, payload: data }, { headers });
+
+      if (isGroupTrip) {
+        try {
+          await axios.post(`${API_URL}/trip_group/create_from_plan/${planId}`, {}, { headers });
+        } catch {
+          // group creation failed silently — trip still created
+        }
+      }
 
       showCustomAlert('Journey Created', 'Your customized itinerary is ready.', true, () => {
         router.push({ pathname: '/trip/scheduledetail', params: { planId, cities: JSON.stringify(selectedCities) } });
@@ -333,6 +439,24 @@ export default function AICreateTrip() {
           />
         </View>
 
+        {/* ── Preferred Places ── */}
+        {selectedCities.length > 0 && filteredAttractions.length > 0 && (
+          <View style={s.section}>
+            <SectionHeader label="Preferred Places" />
+            <Text style={s.placeHint}>Select places you'd like to visit (optional)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
+              {filteredAttractions.map(item => (
+                <PlaceChip
+                  key={item.attraction_id}
+                  item={item}
+                  selected={selectedPlaces.includes(item.attraction_id)}
+                  onPress={() => togglePlace(item.attraction_id)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         <WashiDivider />
 
         {/* ── Dates ── */}
@@ -364,6 +488,34 @@ export default function AICreateTrip() {
             minimumDate={today}
           />
         )}
+
+        <WashiDivider />
+
+        {/* ── Group Trip Toggle ── */}
+        <View style={s.section}>
+          <SectionHeader label="Trip Type" />
+          <TouchableOpacity
+            style={s.groupToggleRow}
+            onPress={() => setIsGroupTrip(p => !p)}
+            activeOpacity={0.85}
+          >
+            <View style={s.groupToggleLeft}>
+              <View style={[s.groupToggleIcon, isGroupTrip && s.groupToggleIconActive]}>
+                <Ionicons name="people" size={18} color={isGroupTrip ? WHITE : INK_60} />
+              </View>
+              <View>
+                <Text style={s.groupToggleTitle}>Group Trip</Text>
+                <Text style={s.groupToggleSub}>
+                  {isGroupTrip ? 'Group will be created automatically' : 'Solo trip — invite friends later'}
+                </Text>
+              </View>
+            </View>
+            {/* Toggle pill */}
+            <View style={[s.togglePill, isGroupTrip && s.togglePillActive]}>
+              <View style={[s.toggleThumb, isGroupTrip && s.toggleThumbActive]} />
+            </View>
+          </TouchableOpacity>
+        </View>
 
         {/* ── Submit ── */}
         <View style={[s.section, { marginTop: 14, paddingBottom: 50 }]}>
@@ -597,6 +749,35 @@ const s = StyleSheet.create({
     paddingVertical: 16, marginTop: 8, borderRadius: 24,
   },
   backBtnText: { fontSize: 13, fontFamily: 'NotoSansJP_500Medium', color: INK_60 },
+
+  // ── Group toggle ──
+  groupToggleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: WASHI_DARK, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 14,
+    borderWidth: 1, borderColor: INK_12,
+  },
+  groupToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  groupToggleIcon: {
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: INK_12, alignItems: 'center', justifyContent: 'center',
+  },
+  groupToggleIconActive: { backgroundColor: BENI },
+  groupToggleTitle: { fontSize: 14, fontWeight: '700', color: SUMI, marginBottom: 2 },
+  groupToggleSub: { fontSize: 12, color: INK_60 },
+  togglePill: {
+    width: 46, height: 26, borderRadius: 13,
+    backgroundColor: INK_12, justifyContent: 'center', paddingHorizontal: 3,
+  },
+  togglePillActive: { backgroundColor: BENI },
+  toggleThumb: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: WHITE,
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 }, elevation: 2,
+  },
+  toggleThumbActive: { alignSelf: 'flex-end' },
+  placeHint: { fontSize: 12, color: INK_60, marginBottom: 4 },
 });
 
 // ─── City modal styles (Premium UI) ───────────────────────────────────────────

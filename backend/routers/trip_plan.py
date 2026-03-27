@@ -43,6 +43,16 @@ async def read_trip_plan(db: Prisma = Depends(get_db), current_user = Depends(ge
     except Exception as e:
         return {"error": str(e)}
 
+@router.get("/trip_plan/ended")
+async def get_ended_trips(db: Prisma = Depends(get_db)):
+    """Return all trips that have already ended (public — no auth required)."""
+    today = D.today()
+    trips = await db.tripplan.find_many(
+        where={"end_plan_date": {"lt": datetime(today.year, today.month, today.day)}},
+        order={"end_plan_date": "desc"},
+    )
+    return trips
+
 @router.get("/trip_plan/{plan_id}")
 async def read_trip_plan_by_id(plan_id: int, db: Prisma = Depends(get_db)):
     try:

@@ -42,21 +42,16 @@ async def route_summarize(text: RouteSummarizeRequest):
     json_structure = """
         [
             {
-                "title": "(emoji) Option 1: Fastest (⏱ 44 min, 🔁 1 transfer)",
+                "title": "Option 1: Fastest (44 min, 1 transfer)",
                 "detail": [
-
-                    "(emoji) Walk: From origin to Nishi-Nippori Station (5 min)",
-
-                    "(emoji) JR Yamanote Line: Nishi-Nippori → Ikebukuro (10 min)",
-
-                    "(emoji) Seibu Ikebukuro Line: Ikebukuro → Nerima (12 min)",
-
-                    "(emoji) Seibu Toshima Line: Nerima → Toshimaen (2 min)",
-
-                    "(emoji) Walk: To destination (4 min)"
+                    "Walk: From origin to Nishi-Nippori Station (5 min)",
+                    "JR Yamanote Line: Nishi-Nippori to Ikebukuro (10 min)",
+                    "Seibu Ikebukuro Line: Ikebukuro to Nerima (12 min)",
+                    "Seibu Toshima Line: Nerima to Toshimaen (2 min)",
+                    "Walk: To destination (4 min)"
                 ],
-                "fare": "💴 Total Fare: ~¥360",
-                "distance": "📏 Distance: 13.5 km"
+                "fare": "Total Fare: ~360 JPY",
+                "distance": "Distance: 13.5 km"
             },
             {
                 "......**another option**......"
@@ -71,19 +66,19 @@ async def route_summarize(text: RouteSummarizeRequest):
 
         - Translate all Japanese to English.
 
-        - You may freely adjust the format (e.g., add/remove bullet points or emojis) to improve readability and presentation.
+        - Do NOT use any emojis. Use plain text only.
+
+        - For fare/cost information: the fare data contains multiple "unit" keys (unit_0, unit_1, unit_2, etc.) representing different passenger types. Always use ONLY unit_0 (adult fare) and display it as a single value like "Total Fare: ~7140 JPY". Do NOT list multiple units.
 
         - Return the result strictly as a JSON array only — no extra comments or explanations outside the JSON format.
 
         Example JSON Format: {json_structure}
 
-        In (emoji) you can change as you want
-        
         Ensure the response **ONLY** contains valid JSON without any explanations or additional text.
-        
+
         *** NO double quotes at the start and end of the JSON response. ***
-        
-        make the response in English language.
+
+        Make the response in English language.
     """
 
     response = client.chat.completions.create(

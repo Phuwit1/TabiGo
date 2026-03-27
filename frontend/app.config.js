@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 export default {
   expo: {
-    name: "japanplanner",
+    name: "TabiGo",
     slug: "japanplanner",
     version: "1.0.0",
     orientation: "portrait",
@@ -30,6 +30,7 @@ export default {
         backgroundColor: "#ffffff",
       },
       package: "com.anonymous.japanplanner",
+      usesCleartextTraffic: true,
       permissions: ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
       config: {
         googleMaps: {
@@ -60,6 +61,9 @@ export default {
         "expo-build-properties",
         {
           android: {
+            compileSdkVersion: 35,
+            targetSdkVersion: 34,
+            minSdkVersion: 24,
             kotlinVersion: "1.9.25",
           },
         },
@@ -101,10 +105,10 @@ export default {
         origin: false,
       },
       eas: {
-        projectId: "669844dd-6898-44d5-9b44-9c7b5ae9d703",
+        projectId: "65e04b9e-ba11-4cea-9d08-b12a7ab624c5",
       },
+      googleApiKey: process.env.GOOGLE_API_KEY,
     },
-
-    owner: "65070184",
+    owner: "natthapong_12",
   },
 };

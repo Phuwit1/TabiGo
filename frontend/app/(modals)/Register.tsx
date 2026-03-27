@@ -13,48 +13,62 @@ export default function RegisterScreen({ navigation } : { navigation: any }) {
     email: '',
     password: '',
     phone_number: '',
-    birth_date: new Date(), // ค่าเริ่มต้นเป็นวันนี้
+    birth_date: new Date(),
   });
 
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const router = useRouter();
-  
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!form.first_name.trim()) e.first_name = 'Required';
+    if (!form.last_name.trim())  e.last_name  = 'Required';
+    if (!form.email.trim())      e.email      = 'Required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email format';
+    if (!form.phone_number.trim()) e.phone_number = 'Required';
+    else if (form.phone_number.length !== 10) e.phone_number = 'Must be 10 digits';
+    if (!form.password)          e.password   = 'Required';
+    else if (form.password.length < 6) e.password = 'At least 6 characters';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
   const handleRegister = async () => {
-
-    if (!form.first_name || !form.last_name || !form.email || !form.password || !form.phone_number || !form.birth_date) {
-      Alert.alert('กรุณากรอกข้อมูลให้ครบทุกช่อง');
-      return;
-    }
-
-    if (form.phone_number.length !== 10) {
-        Alert.alert('เบอร์โทรต้องมี 10 หลัก');
-        return;
-      }
+    if (!validate()) return;
 
     try {
+      setLoading(true);
       const payload = {
         ...form,
-        birth_date: form.birth_date.toISOString().split('T')[0], // ส่งเป็น YYYY-MM-DD
+        birth_date: form.birth_date.toISOString().split('T')[0],
       };
 
-      // const response = await axios.post('http://192.168.1.45:8000/register', payload);
-      const response = await axios.post(`${API_URL}/register`, payload);
-     
-      Alert.alert(
-        'สมัครสมาชิกสำเร็จ!',
-        `ยินดีต้อนรับคุณ ${form.first_name}`,
-        [
-          { text: 'ไปหน้าเข้าสู่ระบบ', onPress: () => router.push('/Login') }
-        ]
-      );
+      await axios.post(`${API_URL}/register`, payload);
 
-    } catch (err: any) {
       Alert.alert(
-        'เกิดข้อผิดพลาด',
-        err?.response?.data?.detail || 'ไม่สามารถสมัครสมาชิกได้',
-        [{ text: 'ตกลง' }]
+        'Registration Successful!',
+        `Welcome, ${form.first_name}!`,
+        [{ text: 'Go to Sign In', onPress: () => router.push('/Login') }]
       );
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+
+      if (status === 400) {
+        setErrors(prev => ({ ...prev, email: 'Email already registered' }));
+      } else if (status === 422) {
+        Alert.alert('Invalid Input', detail || 'Please check your information');
+      } else if (status === 500) {
+        Alert.alert('Server Error', 'Something went wrong. Please try again later.');
+      } else if (!err?.response) {
+        Alert.alert('Connection Error', 'Cannot connect to server. Check your internet connection.');
+      } else {
+        Alert.alert('Registration Failed', detail || 'Unable to create account');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -78,38 +92,46 @@ export default function RegisterScreen({ navigation } : { navigation: any }) {
           source={require('../../assets/images/adaptive-icon.png')}
           style={styles.tabigologo}
           ></Image>
-          <Text style={styles.title}>สมัครสมาชิก</Text>
+          <Text style={styles.title}>Create Account</Text>
           <TextInput
-            style={styles.input}
-            placeholder="ชื่อ"
+            style={[styles.input, errors.first_name && styles.inputError]}
+            placeholder="First Name"
             value={form.first_name}
-            onChangeText={(text) => setForm({ ...form, first_name: text })}
+            onChangeText={(text) => { setForm({ ...form, first_name: text }); setErrors(e => ({ ...e, first_name: '' })); }}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="นามสกุล"
-            value={form.last_name}
-            onChangeText={(text) => setForm({ ...form, last_name: text })}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="อีเมล"
-            value={form.email}
-            onChangeText={(text) => setForm({ ...form, email: text })}
-          />
+          {errors.first_name ? <Text style={styles.errorText}>{errors.first_name}</Text> : null}
 
-           <TextInput
-            style={styles.input}
-            placeholder="เบอร์โทรศัพท์"
+          <TextInput
+            style={[styles.input, errors.last_name && styles.inputError]}
+            placeholder="Last Name"
+            value={form.last_name}
+            onChangeText={(text) => { setForm({ ...form, last_name: text }); setErrors(e => ({ ...e, last_name: '' })); }}
+          />
+          {errors.last_name ? <Text style={styles.errorText}>{errors.last_name}</Text> : null}
+
+          <TextInput
+            style={[styles.input, errors.email && styles.inputError]}
+            placeholder="Email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={form.email}
+            onChangeText={(text) => { setForm({ ...form, email: text }); setErrors(e => ({ ...e, email: '' })); }}
+          />
+          {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
+
+          <TextInput
+            style={[styles.input, errors.phone_number && styles.inputError]}
+            placeholder="Phone Number"
             keyboardType="phone-pad"
             value={form.phone_number}
-            onChangeText={(text) => setForm({ ...form, phone_number: text })}
+            onChangeText={(text) => { setForm({ ...form, phone_number: text }); setErrors(e => ({ ...e, phone_number: '' })); }}
           />
+          {errors.phone_number ? <Text style={styles.errorText}>{errors.phone_number}</Text> : null}
 
-          {/* วันที่ */}
+          {/* Date of Birth */}
           <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateInput}>
             <Text style={styles.dateText}>
-              วันเกิด: {form.birth_date.toLocaleDateString('th-TH')}
+              Date of Birth: {form.birth_date.toLocaleDateString('en-GB')}
             </Text>
           </TouchableOpacity>
 
@@ -122,29 +144,31 @@ export default function RegisterScreen({ navigation } : { navigation: any }) {
               maximumDate={new Date()}
             />
           )}
+
           <TextInput
-            style={styles.input}
-            placeholder="รหัสผ่าน"
+            style={[styles.input, errors.password && styles.inputError]}
+            placeholder="Password"
             secureTextEntry
             value={form.password}
-            onChangeText={(text) => setForm({ ...form, password: text })}
+            onChangeText={(text) => { setForm({ ...form, password: text }); setErrors(e => ({ ...e, password: '' })); }}
           />
+          {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
 
-          <TouchableOpacity onPress={handleRegister} style={styles.buttonContainer} >
-            <LinearGradient  
-              colors={['#fc8c54ff', '#FF5E62']}          
+          <TouchableOpacity onPress={handleRegister} disabled={loading} style={styles.buttonContainer}>
+            <LinearGradient
+              colors={['#fc8c54ff', '#FF5E62']}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}  
-              style={styles.gradientButton}
-             >
-              <Text style={styles.buttonText}>สร้างบัญชี</Text>
+              end={{ x: 1, y: 0 }}
+              style={[styles.gradientButton, loading && { opacity: 0.7 }]}
+            >
+              <Text style={styles.buttonText}>{loading ? 'Creating...' : 'Create Account'}</Text>
             </LinearGradient>
           </TouchableOpacity>
 
-            <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>มีบัญชีอยู่แล้ว? </Text>
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>Already have an account? </Text>
             <TouchableOpacity onPress={handleBackToLogin}>
-              <Text style={styles.loginLink}>เข้าสู่ระบบ</Text>
+              <Text style={styles.loginLink}>Sign In</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -208,13 +232,13 @@ const styles = StyleSheet.create({
   gradientButton: {
     padding: 15,
     alignItems: 'center',
-    borderRadius: 16, // ทำมุมโค้งมน
-    width: '100%',    // หรือกำหนดความกว้างที่ต้องการ
+    borderRadius: 16,
+    width: '100%',
   },
   buttonText: {
     backgroundColor: 'transparent',
     fontSize: 18,
-    color: '#fff', // ตัวหนังสือสีขาว
+    color: '#fff',
     fontWeight: 'bold',
   },
   tabigologo :{
@@ -237,5 +261,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  inputError: {
+    borderColor: '#FF5E62',
+    backgroundColor: '#fff5f5',
+  },
+  errorText: {
+    color: '#FF5E62',
+    fontSize: 12,
+    alignSelf: 'flex-start',
+    marginTop: -10,
+    marginBottom: 8,
   },
 });

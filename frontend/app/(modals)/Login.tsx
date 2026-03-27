@@ -8,6 +8,25 @@ import { showMessage } from 'react-native-flash-message';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_URL } from '@/api.js'
 
+// Sync locally-saved onboarding preferences to backend after login
+const syncPreferencesIfPending = async (token: string) => {
+  try {
+    const raw = await AsyncStorage.getItem('onboarding_answers');
+    if (!raw) return;
+    const answers = JSON.parse(raw);
+    if (!answers.travel_style || !answers.trip_length) return;
+    await axios.post(
+      `${API_URL}/user/preferences`,
+      {
+        travel_style: answers.travel_style,
+        interests: (answers.interests as string[]) ?? [],
+        trip_length: answers.trip_length,
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+  } catch (_) {}
+};
+
 import {
   GoogleSignin,
   statusCodes,
@@ -20,38 +39,50 @@ import {
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigation = useNavigation();
   const router = useRouter();
-
-  const [termChecked, setTermChecked] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     GoogleSignin.configure({
       webClientId: "1061030412176-tmtkq6rgmr4biqpr8ir1sk902od0mu1e.apps.googleusercontent.com",
     });
   }, []);
-  
+
+  const validate = () => {
+    const e: { email?: string; password?: string } = {};
+    if (!email.trim()) e.email = 'Required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = 'Invalid email format';
+    if (!password) e.password = 'Required';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
   const handleLogin = async () => {
-  try {
-    const response = await axios.post(`${API_URL}/login`, {
-      email,
-      password,
-    });
-
-    const { token, refresh_token } = response.data;
-
-    await AsyncStorage.setItem('access_token', token);
-    await AsyncStorage.setItem('refresh_token', refresh_token);
-    
-     router.push('/(tabs)/profile');
-    
-    } catch (err : any) {
-      Alert.alert(
-        'เข้าสู่ระบบไม่สำเร็จ',
-        err?.response?.data?.detail || 'อีเมลหรือรหัสผ่านไม่ถูกต้อง',
-        [{ text: 'ลองใหม่อีกครั้ง' }]
-      );
+    if (!validate()) return;
+    try {
+      setIsSubmitting(true);
+      const response = await axios.post(`${API_URL}/login`, { email, password });
+      const { token, refresh_token } = response.data;
+      await AsyncStorage.setItem('access_token', token);
+      await AsyncStorage.setItem('refresh_token', refresh_token);
+      await syncPreferencesIfPending(token);
+      router.push('/(tabs)/profile');
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 401) {
+        setErrors({ email: ' ', password: 'Invalid email or password' });
+      } else if (status === 403) {
+        Alert.alert('Already Signed In', 'This account is logged in on another device.', [{ text: 'OK' }]);
+      } else if (!err?.response) {
+        Alert.alert('Connection Error', 'Cannot connect to server. Check your internet connection.');
+      } else {
+        Alert.alert('Login Failed', detail || 'Something went wrong.', [{ text: 'Try Again' }]);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -61,7 +92,7 @@ export default function Login() {
     console.log('Starting Google Sign-In...');
     setIsSubmitting(true);
     
-    // ตรวจสอบ Play Services
+    // Check Play Services availability
     await GoogleSignin.hasPlayServices();
     
     const response = await GoogleSignin.signIn();
@@ -69,7 +100,7 @@ export default function Login() {
     
     if (isSuccessResponse(response)) {
       const { idToken, user } = response.data;
-      const name = user.name || "";  // กันไว้เผื่อเป็น null
+      const name = user.name || "";  // fallback in case null
       const email = user.email;
       const photo = user.photo || "";
       
@@ -81,6 +112,7 @@ export default function Login() {
 
       await AsyncStorage.setItem('access_token', token);
       await AsyncStorage.setItem('refresh_token', refresh_token);
+      await syncPreferencesIfPending(token);
 
       router.push({
         pathname: '/(tabs)/profile',
@@ -129,57 +161,58 @@ export default function Login() {
         source={require('../../assets/images/adaptive-icon.png')}
         style={styles.tabigologo}>
         </Image>
-        <Text style={styles.title}>เข้าสู่ระบบ</Text>
-        
+        <Text style={styles.title}>Sign In</Text>
+
         <TextInput
-          style={styles.input}
-          placeholder="อีเมล"
+          style={[styles.input, errors.email && styles.inputError]}
+          placeholder="Email"
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(t) => { setEmail(t); setErrors(e => ({ ...e, email: undefined })); }}
           autoCapitalize="none"
           keyboardType="email-address"
         />
-        
+        {errors.email?.trim() ? <Text style={styles.errorText}>{errors.email}</Text> : null}
+
         <TextInput
-          style={styles.input}
-          placeholder="รหัสผ่าน"
+          style={[styles.input, errors.password && styles.inputError]}
+          placeholder="Password"
           secureTextEntry
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(t) => { setPassword(t); setErrors(e => ({ ...e, password: undefined })); }}
         />
-        
+        {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+
         <TouchableOpacity onPress={handleLogin} style={styles.buttonContainer} disabled={isSubmitting}>
-          <LinearGradient  
-            colors={['#fc8c54ff', '#FF5E62']}          
+          <LinearGradient
+            colors={['#fc8c54ff', '#FF5E62']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
-            
-            style={styles.gradientButton}
+            style={[styles.gradientButton, isSubmitting && { opacity: 0.7 }]}
           >
-            <Text style={styles.buttonText}>เข้าสู่ระบบ</Text>
+            <Text style={styles.buttonText}>{isSubmitting ? 'Signing in...' : 'Sign In'}</Text>
           </LinearGradient>
         </TouchableOpacity>
 
         <View style={styles.divider}>
           <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>หรือ</Text>
+          <Text style={styles.dividerText}>or</Text>
           <View style={styles.dividerLine} />
         </View>
 
         <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin}>
           <View style={styles.googleButtonContent}>
-            <Image 
-               source={require('../../assets/images/googlelogo.png')} 
+            <Image
+               source={require('../../assets/images/googlelogo.png')}
               style={styles.googleLogo}
             />
-            <Text style={styles.googleButtonText}>เข้าสู่ระบบด้วย Google</Text>
+            <Text style={styles.googleButtonText}>Sign in with Google</Text>
           </View>
         </TouchableOpacity>
 
-          <View style={styles.registerContainer}>
-          <Text style={styles.registerText}>ยังไม่มีบัญชี? </Text>
+        <View style={styles.registerContainer}>
+          <Text style={styles.registerText}>Don't have an account? </Text>
           <TouchableOpacity onPress={handleRegister}>
-            <Text style={styles.registerLink}>สร้างบัญชีใหม่</Text>
+            <Text style={styles.registerLink}>Create Account</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -225,13 +258,13 @@ const styles = StyleSheet.create({
   gradientButton: {
     padding: 15,
     alignItems: 'center',
-    borderRadius: 16, // ทำมุมโค้งมน
-    width: '100%',    // หรือกำหนดความกว้างที่ต้องการ
+    borderRadius: 16,
+    width: '100%',
   },
   buttonText: {
     backgroundColor: 'transparent',
     fontSize: 18,
-    color: '#fff', // ตัวหนังสือสีขาว
+    color: '#fff',
     fontWeight: 'bold',
   },
   divider: {
@@ -292,5 +325,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  inputError: {
+    borderColor: '#FF5E62',
+    backgroundColor: '#fff5f5',
+  },
+  errorText: {
+    color: '#FF5E62',
+    fontSize: 12,
+    alignSelf: 'flex-start',
+    marginTop: -10,
+    marginBottom: 8,
   },
 });

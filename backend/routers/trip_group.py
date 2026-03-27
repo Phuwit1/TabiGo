@@ -268,6 +268,49 @@ async def delete_group_member(group_member_id: int, db: Prisma = Depends(get_db)
     return await db.groupmember.delete(where={"group_member_id": group_member_id})
 
 
+@router.get("/trip_group/{trip_id}/my-role")
+async def get_my_role(trip_id: int, db: Prisma = Depends(get_db), current_user = Depends(get_current_user)):
+    group = await db.tripgroup.find_unique(where={"trip_id": trip_id})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if group.owner_id == current_user.customer_id:
+        return {"role": "admin"}
+    member = await db.groupmember.find_first(
+        where={"trip_id": trip_id, "customer_id": current_user.customer_id}
+    )
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+    return {"role": member.role}
+
+
+@router.patch("/trip_group/{trip_id}/members/{group_member_id}/role")
+async def update_member_role(
+    trip_id: int,
+    group_member_id: int,
+    data: dict,
+    db: Prisma = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    group = await db.tripgroup.find_unique(where={"trip_id": trip_id})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if group.owner_id != current_user.customer_id:
+        raise HTTPException(status_code=403, detail="Only the Admin can change roles")
+    new_role = data.get("role", "")
+    if new_role not in ("editor", "member"):
+        raise HTTPException(status_code=422, detail="Role must be 'editor' or 'member'")
+    target = await db.groupmember.find_unique(where={"group_member_id": group_member_id})
+    if not target or target.trip_id != trip_id:
+        raise HTTPException(status_code=404, detail="Member not found in this group")
+    if target.customer_id == group.owner_id:
+        raise HTTPException(status_code=400, detail="Cannot change Admin's role")
+    updated = await db.groupmember.update(
+        where={"group_member_id": group_member_id},
+        data={"role": new_role}
+    )
+    return updated
+
+
 @router.delete("/trip_group/{trip_id}/leave")
 async def leave_trip_group(trip_id: int, db: Prisma = Depends(get_db), current_user = Depends(get_current_user)):
     try:

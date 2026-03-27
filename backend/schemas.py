@@ -54,12 +54,14 @@ class TripPlan(BaseModel):
     day_of_trip: Optional[int] = None
     trip_id: Optional[int] = None
     image: Optional[str] = None
+    city: Optional[str] = None
 
 class TripPlanUpdate(BaseModel):
     name_group: Optional[str] = None
     end_plan_date: Optional[datetime] = None
     day_of_trip: Optional[int] = None
     image: Optional[str] = None
+    city: Optional[str] = None
     
 class TripSchedule(BaseModel):
     plan_id: int
@@ -105,4 +107,13 @@ class RouteRequest(BaseModel):
     start: str
     goal: str
     start_time: str
-    
+
+class UserPreferenceCreate(BaseModel):
+    travel_style: str
+    interests: List[str]
+    trip_length: str
+
+class UserPreferenceResponse(BaseModel):
+    travel_style: str
+    interests: List[str]
+    trip_length: str

@@ -9,7 +9,7 @@ from schemas import GoogleLoginRequest
 import secrets
 
 from dependencies import get_db, create_access_token, create_refresh_token, SECRET_KEY, ALGORITHM
-from schemas import Customer, CustomerLogin, CustomerOut, TokenRefreshRequest, GoogleLoginRequest
+from schemas import Customer, CustomerLogin, CustomerOut, TokenRefreshRequest, GoogleLoginRequest, UserPreferenceCreate, UserPreferenceResponse
 import os
 
 router = APIRouter(tags=["Auth"])
@@ -41,35 +41,48 @@ async def refresh_token(data: TokenRefreshRequest, db: Prisma = Depends(get_db))
 
 @router.post("/register", response_model=CustomerOut)
 async def register(customer: Customer, db: Prisma = Depends(get_db)):
-    existing = await db.customer.find_unique(where={"email": customer.email})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    try:
+        existing = await db.customer.find_unique(where={"email": customer.email})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
 
-    hashed = bcrypt.hashpw(customer.password.encode(), bcrypt.gensalt()).decode()
-    access_token = create_access_token(customer.email)
-    refresh_token = create_refresh_token(customer.email)
+        if not customer.first_name or not customer.last_name:
+            raise HTTPException(status_code=422, detail="First name and last name are required")
+        if not customer.password or len(customer.password) < 6:
+            raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
 
-    birth_date = None
-    if customer.birth_date:
-        if isinstance(customer.birth_date, str):
-            birth_date = datetime.fromisoformat(customer.birth_date)
-        elif isinstance(customer.birth_date, datetime):
-            birth_date = customer.birth_date
+        hashed = bcrypt.hashpw(customer.password.encode(), bcrypt.gensalt()).decode()
+        access_token = create_access_token(customer.email)
+        refresh_token = create_refresh_token(customer.email)
 
-    await db.customer.create(
-        data={
-            "first_name": customer.first_name,
-            "last_name": customer.last_name,
-            "email": customer.email,
-            "password": hashed,
-            # "currentToken": access_token, <= idk what this is for registration
-            "currentToken": None,
-            "refreshToken": refresh_token,
-            "phone_number": customer.phone_number,
-            "birth_date": birth_date,
-        }
-    )
-    return {"email": customer.email, "token": access_token, "refresh_token": refresh_token}
+        birth_date = None
+        if customer.birth_date:
+            try:
+                if isinstance(customer.birth_date, str):
+                    birth_date = datetime.fromisoformat(customer.birth_date)
+                elif isinstance(customer.birth_date, datetime):
+                    birth_date = customer.birth_date
+            except ValueError:
+                raise HTTPException(status_code=422, detail="Invalid date format")
+
+        await db.customer.create(
+            data={
+                "first_name": customer.first_name,
+                "last_name": customer.last_name,
+                "email": customer.email,
+                "password": hashed,
+                "currentToken": None,
+                "refreshToken": refresh_token,
+                "phone_number": customer.phone_number,
+                "birth_date": birth_date,
+            }
+        )
+        return {"email": customer.email, "token": access_token, "refresh_token": refresh_token}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 @router.post("/login", response_model=CustomerOut)
 async def login(customer: CustomerLogin, db: Prisma = Depends(get_db)):
@@ -162,6 +175,67 @@ async def google_login(data: GoogleLoginRequest, db: Prisma = Depends(get_db)):
     except Exception as e:
         print(f"Google Login Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/change-password")
+async def change_password(data: dict, request: Request, db: Prisma = Depends(get_db)):
+    email = getattr(request.state, "email", None)
+    if not email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    current_password = data.get("current_password", "")
+    new_password     = data.get("new_password", "")
+
+    if not current_password or not new_password:
+        raise HTTPException(status_code=422, detail="Both current and new password are required")
+    if len(new_password) < 6:
+        raise HTTPException(status_code=422, detail="New password must be at least 6 characters")
+
+    user = await db.customer.find_unique(where={"email": email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not bcrypt.checkpw(current_password.encode(), user.password.encode()):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    hashed = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+    await db.customer.update(where={"email": email}, data={"password": hashed})
+    return {"detail": "Password changed successfully"}
+
+
+@router.post("/user/preferences", response_model=UserPreferenceResponse)
+async def upsert_preferences(data: UserPreferenceCreate, request: Request, db: Prisma = Depends(get_db)):
+    email = getattr(request.state, "email", None)
+    if not email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    user = await db.customer.find_unique(where={"email": email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    existing = await db.userpreference.find_unique(where={"customer_id": user.customer_id})
+    if existing:
+        pref = await db.userpreference.update(
+            where={"customer_id": user.customer_id},
+            data={"travel_style": data.travel_style, "interests": data.interests, "trip_length": data.trip_length}
+        )
+    else:
+        pref = await db.userpreference.create(
+            data={"customer_id": user.customer_id, "travel_style": data.travel_style, "interests": data.interests, "trip_length": data.trip_length}
+        )
+    return {"travel_style": pref.travel_style, "interests": pref.interests, "trip_length": pref.trip_length}
+
+
+@router.get("/user/preferences", response_model=UserPreferenceResponse)
+async def get_preferences(request: Request, db: Prisma = Depends(get_db)):
+    email = getattr(request.state, "email", None)
+    if not email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    user = await db.customer.find_unique(where={"email": email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    pref = await db.userpreference.find_unique(where={"customer_id": user.customer_id})
+    if not pref:
+        raise HTTPException(status_code=404, detail="No preferences set")
+    return {"travel_style": pref.travel_style, "interests": pref.interests, "trip_length": pref.trip_length}
 
 
 @router.post("/logout")

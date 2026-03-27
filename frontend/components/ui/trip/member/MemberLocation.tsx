@@ -16,7 +16,8 @@ const getSocket = () => {
             transports: ['websocket'],
             autoConnect: false,
             reconnection: true,
-        });
+        } as any);
+        globalSocket.io.opts.extraHeaders = { 'ngrok-skip-browser-warning': 'true' };
     }
     return globalSocket;
 };
@@ -51,31 +52,44 @@ export default function MemberLocationMap({ groupCode, userId, userName, onClose
 
         // 2. เชื่อมต่อ Socket
         const socket = getSocket();
-        if (!socket.connected) socket.connect();
 
-        // ✅ 1. แก้ชื่อ Event เป็น 'join_group' และส่ง key 'group_id'
-        // (ตามไฟล์ get_location.py)
-        socket.emit('join_group', { 
-            group_id: groupCode, 
-            username: userName 
-        });
-        setStatus(`Online: ${groupCode}`);
+        // ลงทะเบียน listeners ก่อนเสมอ และ off ก่อนเพื่อป้องกัน duplicate
+        socket.off('location_update');
+        socket.off('user_left');
 
-        // ✅ 2. แก้ชื่อ Event ที่รอรับเป็น 'location_update'
         socket.on('location_update', (data: any) => {
-            // Backend ส่งกลับมาเป็น: { sid, username, lat, lng, timestamp }
-            // เราใช้ sid เป็น unique key แทน user_id
-            
             setOthersLocations((prev: any) => ({
                 ...prev,
-                [data.sid]: { // ใช้ sid เป็น key
-                    latitude: data.lat,   // Map lat -> latitude
-                    longitude: data.lng, // Map lng -> longitude
+                [data.username]: {
+                    latitude: data.lat,
+                    longitude: data.lng,
                     username: data.username,
-                    timestamp: data.timestamp
+                    timestamp: data.updated_at ?? data.timestamp,
+                    isOnline: data.is_online ?? true,
                 }
             }));
         });
+
+        socket.on('user_left', (data: any) => {
+            setOthersLocations((prev: any) => {
+                if (!prev[data.username]) return prev;
+                return { ...prev, [data.username]: { ...prev[data.username], isOnline: false } };
+            });
+        });
+
+        // emit join_group หลังจาก listeners พร้อมแล้ว
+        // ถ้า socket ยังไม่ได้ connect → รอ connect แล้วค่อย emit
+        const emitJoin = () => {
+            socket.emit('join_group', { group_id: groupCode, username: userName });
+            setStatus(`Online: ${groupCode}`);
+        };
+
+        if (socket.connected) {
+            emitJoin();
+        } else {
+            socket.once('connect', emitJoin);
+            socket.connect();
+        }
 
         // 3. เริ่มส่งตำแหน่งตัวเอง
         locationSubscription.current = await Location.watchPositionAsync(
@@ -103,10 +117,11 @@ export default function MemberLocationMap({ groupCode, userId, userName, onClose
     const stopTracking = () => {
         if (locationSubscription.current) locationSubscription.current.remove();
         const socket = getSocket();
-        
-        socket.off('location_update'); // ✅ ปิด listener ตัวใหม่
-        
-        // ✅ ส่ง event ออกกลุ่ม (ถ้าจำเป็น)
+
+        socket.off('location_update');
+        socket.off('user_left');
+        socket.off('connect'); // กัน emitJoin ค้างอยู่กรณี unmount ก่อน connect
+
         socket.emit('leave_group', { group_id: groupCode });
     };
 
@@ -169,14 +184,18 @@ export default function MemberLocationMap({ groupCode, userId, userName, onClose
                             coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
                             title={loc.username || 'Friend'}
                             description={loc.timestamp ? `อัปเดต: ${new Date(loc.timestamp).toLocaleTimeString()}` : ''}
+                            tracksViewChanges={false}
                         >
-                            <View style={styles.customMarker}>
-                                <Ionicons name="person" size={16} color="white" />
+                            <View style={[styles.customMarker, !loc.isOnline && styles.customMarkerOffline]}>
+                                <Ionicons name={loc.isOnline ? 'person' : 'person-outline'} size={16} color="white" />
                             </View>
-                            
+
                             <Callout>
                                 <View style={styles.calloutView}>
                                     <Text style={styles.calloutTitle}>{loc.username}</Text>
+                                    <Text style={styles.calloutSub}>
+                                        {loc.isOnline ? 'ออนไลน์' : `ออฟไลน์ · ${loc.timestamp ? new Date(loc.timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''}`}
+                                    </Text>
                                 </View>
                             </Callout>
                         </Marker>
@@ -216,8 +235,12 @@ const styles = StyleSheet.create({
         backgroundColor: '#FF6B6B', padding: 8, borderRadius: 20,
         borderWidth: 2, borderColor: 'white', elevation: 5
     },
-    calloutView: { padding: 4, alignItems: 'center' },
+    customMarkerOffline: {
+        backgroundColor: '#9E9E9E',
+    },
+    calloutView: { padding: 4, alignItems: 'center', minWidth: 100 },
     calloutTitle: { fontWeight: 'bold', fontSize: 14 },
+    calloutSub: { fontSize: 11, color: '#666', marginTop: 2 },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     loadingText: { marginTop: 10, color: '#666' },
     fab: {

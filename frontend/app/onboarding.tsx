@@ -6,6 +6,8 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import { API_URL } from '@/api.js';
 
 const { width: W } = Dimensions.get('window');
 
@@ -70,17 +72,6 @@ const STEPS: Step[] = [
       { label: '4–7 Days',  icon: 'calendar-outline', value: 'week'    },
       { label: '1–2 Weeks', icon: 'airplane-outline', value: 'twoweek' },
       { label: '1 Month+',  icon: 'globe-outline',    value: 'long'    },
-    ],
-  },
-  {
-    id: 'travel_with', type: 'single',
-    title: 'Who do you travel with?',
-    subtitle: "We'll suggest the best experiences",
-    options: [
-      { label: 'Solo',    icon: 'person-outline', value: 'solo'    },
-      { label: 'Partner', icon: 'heart-outline',  value: 'couple'  },
-      { label: 'Friends', icon: 'people-outline', value: 'friends' },
-      { label: 'Family',  icon: 'home-outline',   value: 'family'  },
     ],
   },
   {
@@ -161,6 +152,23 @@ export default function OnboardingScreen() {
   const handleFinish = async () => {
     await AsyncStorage.setItem('onboarding_done', 'true');
     await AsyncStorage.setItem('onboarding_answers', JSON.stringify(answers));
+
+    // POST preferences to backend (best-effort, don't block navigation)
+    try {
+      const token = await AsyncStorage.getItem('access_token');
+      if (token && answers.travel_style && answers.trip_length) {
+        await axios.post(
+          `${API_URL}/user/preferences`,
+          {
+            travel_style: answers.travel_style,
+            interests: (answers.interests as string[]) ?? [],
+            trip_length: answers.trip_length,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+    } catch (_) {}
+
     router.replace('/(tabs)');
   };
 

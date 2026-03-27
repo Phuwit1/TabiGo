@@ -19,18 +19,8 @@ import LottieView from 'lottie-react-native';
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyA73tpAfskui7aqX9GXabfGLU0OZ5HLC-U';
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
-const BENI         = '#C0392B';
-const BENI_LIGHT   = 'rgba(192,57,43,0.08)';
-const KINCHA       = '#B8963E';
-const KINCHA_LIGHT = '#D4AF55';
-const SUMI         = '#1C1410';
-const WASHI        = '#FAF5EC';
-const WASHI_DARK   = '#EDE5D8';
-const WHITE        = '#FFFFFF';
-const INK_60       = 'rgba(28,20,16,0.6)';
-const INK_30       = 'rgba(28,20,16,0.3)';
-const INK_12       = 'rgba(28,20,16,0.12)';
+import { BENI, KINCHA, KINCHA_LIGHT, SUMI, WASHI, WASHI_DARK, WHITE, INK_60, INK_30, INK_12 } from '@/constants/theme';
+const BENI_LIGHT = 'rgba(192,57,43,0.08)';
 
 export default function EditSchedule() {
   const { trip_id, dayIndex } = useLocalSearchParams();
@@ -54,6 +44,7 @@ export default function EditSchedule() {
   const [addActivityName, setAddActivityName]   = useState('');
   const [addTime, setAddTime]                   = useState('09:00');
   const [showAddTimePicker, setShowAddTimePicker] = useState(false);
+  const [canEdit, setCanEdit]                   = useState(true); // default true to avoid flicker
 
   const showCustomAlert = (title: string, message: string, isSuccess = false, onConfirm = () => {}) => {
     Alert.alert(title, message, [{ text: 'OK', onPress: onConfirm }]);
@@ -68,10 +59,25 @@ export default function EditSchedule() {
           const token = await AsyncStorage.getItem('access_token');
           const headers: any = { 'Content-Type': 'application/json' };
           if (token) headers.Authorization = `Bearer ${token}`;
-          const res = await axios.get(`${API_URL}/trip_schedule/${planId}`, { headers });
-          const payload = res.data?.payload;
+          const [schedRes, planRes, userRes] = await Promise.all([
+            axios.get(`${API_URL}/trip_schedule/${planId}`, { headers }),
+            axios.get(`${API_URL}/trip_plan/${planId}`, { headers }),
+            axios.get(`${API_URL}/user`, { headers }),
+          ]);
+          const payload = schedRes.data?.payload;
           setSchedule(payload);
           setEditedSchedule(JSON.parse(JSON.stringify(payload)));
+          const isCreator = planRes.data?.creator_id === userRes.data?.customer_id;
+          if (isCreator) {
+            setCanEdit(true);
+          } else if (planRes.data?.trip_id) {
+            try {
+              const roleRes = await axios.get(`${API_URL}/trip_group/${planRes.data.trip_id}/my-role`, { headers });
+              setCanEdit(roleRes.data.role === 'editor');
+            } catch { setCanEdit(false); }
+          } else {
+            setCanEdit(false);
+          }
         } catch {
           showCustomAlert('Error', 'Failed to load schedule', false);
         } finally {
@@ -185,7 +191,23 @@ export default function EditSchedule() {
     if (selectedDate && tempTimeIndex !== null) {
       const hh = selectedDate.getHours().toString().padStart(2, '0');
       const mm = selectedDate.getMinutes().toString().padStart(2, '0');
-      updateActivity(selectedDayIndex, tempTimeIndex, 'time', `${hh}:${mm}`);
+      const newTime = `${hh}:${mm}`;
+
+      // ดึงข้อมูล schedule ของวันปัจจุบันที่กำลังแก้ไขอยู่
+      const currentSchedule = editedSchedule?.itinerary[selectedDayIndex]?.schedule ?? [];
+
+      // เช็คว่ามีเวลาใหม่นี้ ซ้ำกับกิจกรรมอื่นในวันเดียวกันหรือไม่ (ยกเว้น index ของตัวเอง)
+      const isDuplicate = currentSchedule.some((act: any, idx: number) => 
+        idx !== tempTimeIndex && act.time === newTime
+      );
+
+      if (isDuplicate) {
+        Alert.alert('Time Conflict', `${newTime} is already used. Please choose another time.`);
+        if (Platform.OS === 'android') setTempTimeIndex(null);
+        return; // หยุดการทำงาน ไม่ให้อัปเดตเวลาลงไป
+      }
+
+      updateActivity(selectedDayIndex, tempTimeIndex, 'time', newTime);
       if (Platform.OS === 'android') setTempTimeIndex(null);
     } else {
       setTempTimeIndex(null);
@@ -378,10 +400,12 @@ export default function EditSchedule() {
               />
             </View>
 
-            {/* Delete button */}
-            <TouchableOpacity style={s.deleteBtn} onPress={() => handleDeleteActivity(i)} activeOpacity={0.8}>
-              <Ionicons name="trash-outline" size={15} color={BENI} />
-            </TouchableOpacity>
+            {/* Delete button — admin only */}
+            {canEdit && (
+              <TouchableOpacity style={s.deleteBtn} onPress={() => handleDeleteActivity(i)} activeOpacity={0.8}>
+                <Ionicons name="trash-outline" size={15} color={BENI} />
+              </TouchableOpacity>
+            )}
           </View>
         </TouchableOpacity>
       </ScaleDecorator>
@@ -417,23 +441,27 @@ export default function EditSchedule() {
                     {isSelected && <View style={s.dayChipDot} />}
                   </TouchableOpacity>
 
-                  {/* Delete day badge */}
-                  <TouchableOpacity
-                    style={s.deleteDayBadge}
-                    onPress={() => handleDeleteDay(index)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons name="close" size={8} color={WHITE} />
-                  </TouchableOpacity>
+                  {/* Delete day badge — admin only */}
+                  {canEdit && (
+                    <TouchableOpacity
+                      style={s.deleteDayBadge}
+                      onPress={() => handleDeleteDay(index)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="close" size={8} color={WHITE} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
             })}
 
-            {/* Add day button */}
-            <TouchableOpacity style={s.addDayBtn} onPress={handleAddDay} activeOpacity={0.8}>
-              <Ionicons name="add" size={14} color={KINCHA_LIGHT} />
-              <Text style={s.addDayText}>Add Day</Text>
-            </TouchableOpacity>
+            {/* Add day button — admin only */}
+            {canEdit && (
+              <TouchableOpacity style={s.addDayBtn} onPress={handleAddDay} activeOpacity={0.8}>
+                <Ionicons name="add" size={14} color={KINCHA_LIGHT} />
+                <Text style={s.addDayText}>Add Day</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </View>
 
@@ -445,10 +473,12 @@ export default function EditSchedule() {
             <Text style={s.dayDate}>{dayjs(currentDay.date).format('D MMM YYYY')}</Text>
           </View>
 
-          <TouchableOpacity style={s.addActivityBtn} onPress={openAddSheet} activeOpacity={0.8}>
-            <Ionicons name="add-circle-outline" size={14} color={WASHI} />
-            <Text style={s.addActivityText}>Add</Text>
-          </TouchableOpacity>
+          {canEdit && (
+            <TouchableOpacity style={s.addActivityBtn} onPress={openAddSheet} activeOpacity={0.8}>
+              <Ionicons name="add-circle-outline" size={14} color={WASHI} />
+              <Text style={s.addActivityText}>Add</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Kincha divider */}
@@ -487,12 +517,19 @@ export default function EditSchedule() {
           )}
         </View>
 
-        {/* ── Save footer ── */}
+        {/* ── Save footer / View Only notice ── */}
         <View style={s.footer}>
-          <TouchableOpacity style={s.saveBtn} onPress={confirmPlan} disabled={saving} activeOpacity={0.85}>
-            <Ionicons name="checkmark-circle-outline" size={16} color={WASHI} />
-            <Text style={s.saveBtnText}>Save Changes</Text>
-          </TouchableOpacity>
+          {canEdit ? (
+            <TouchableOpacity style={s.saveBtn} onPress={confirmPlan} disabled={saving} activeOpacity={0.85}>
+              <Ionicons name="checkmark-circle-outline" size={16} color={WASHI} />
+              <Text style={s.saveBtnText}>Save Changes</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={s.viewOnlyBanner}>
+              <Ionicons name="lock-closed-outline" size={14} color={INK_60} />
+              <Text style={s.viewOnlyText}>View Only — only the trip Admin can edit</Text>
+            </View>
+          )}
         </View>
 
         {/* ── Add Activity Sheet ── */}
@@ -838,6 +875,13 @@ const s = StyleSheet.create({
   },
   manualAddBtnDisabled: { backgroundColor: WASHI_DARK, shadowOpacity: 0, elevation: 0 },
   manualAddBtnText: { fontSize: 14, fontFamily: 'NotoSansJP_700Bold', color: WASHI },
+
+  viewOnlyBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 12, borderRadius: 99,
+    backgroundColor: 'rgba(28,20,16,0.05)', borderWidth: 1, borderColor: INK_12,
+  },
+  viewOnlyText: { fontSize: 13, fontFamily: 'NotoSansJP_400Regular', color: INK_60 },
 });
 
 // ─── Modal styles ─────────────────────────────────────────────────────────────

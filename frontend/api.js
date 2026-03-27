@@ -5,7 +5,7 @@ const getBackendUrl = () => {
   const localhost = debuggerHost?.split(":")[0];
 
   if (!localhost) {
-     return 'http://localhost:3000'; 
+     return 'https://unvulgar-uneffectively-junior.ngrok-free.dev'; // ← ใส่ IP คอมตัวเองตรงนี้
   }
 
   console.log(`Using backend URL: http://${localhost}:8000`);
@@ -18,13 +18,13 @@ const getWebSocketUrl = () => {
   const localhost = debuggerHost?.split(":")[0];
 
   if (!localhost) {
-     return 'http://localhost:3000'; 
+     return 'https://unvulgar-uneffectively-junior.ngrok-free.dev';
   }
 
-  console.log(`Using backend URL: http://${localhost}:8010`);
-  return `http://${localhost}:8010`;
+  console.log(`Using backend URL: http://${localhost}:8000`);
+  return `http://${localhost}:8000`;
 }
 
 export const API_URL = getBackendUrl();
-export const GOOGLE_API_KEY = "AIzaSyA73tpAfskui7aqX9GXabfGLU0OZ5HLC-U";
+export const GOOGLE_API_KEY = Constants.expoConfig?.extra?.googleApiKey ?? '';
 export const WEBSOCKET_URL = getWebSocketUrl();

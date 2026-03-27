@@ -147,7 +147,6 @@ export default function CurrentCard() {
   if (!currentTrip) {
     return (
       <Animated.View style={[s.card, s.emptyCard, { opacity: fadeAnim }]}>
-        <Text style={s.emptyKanji}>旅</Text>
         <View style={s.emptyIconRing}>
           <Ionicons name="map-outline" size={28} color={BENI} />
         </View>
@@ -256,6 +255,7 @@ export default function CurrentCard() {
 const s = StyleSheet.create({
   card: {
     width: '92%',
+    height: 220,
     alignSelf: 'center',
     backgroundColor: WASHI,
     borderRadius: 10,
@@ -268,7 +268,7 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 5,
     marginBottom: 18,
-    marginTop: 12,
+    marginTop: 4,
   },
   topBar: {
     height: 3,

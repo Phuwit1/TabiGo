@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable, Image, Animated, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL, GOOGLE_API_KEY } from '@/api.js';
 
@@ -19,7 +19,12 @@ interface InfoCardProps {
   imageRef: string;
   rating?: number;
   description?: string;
+  address?: string;
+  city?: string;
   index?: number;
+  lat?: number | null;
+  lng?: number | null;
+  onAddToTrip?: (data: { title: string; imageRef: string; rating?: number; description?: string; lat?: number | null; lng?: number | null }) => void;
 }
 
 const CARD_W = 170;
@@ -27,7 +32,7 @@ const CARD_H = 240;
 const IMG_H  = 115;
 const INFO_H = CARD_H - IMG_H; // 105
 
-export default function InfoCard({ title, imageRef, rating, description, index = 0 }: InfoCardProps) {
+export default function InfoCard({ title, imageRef, rating, description, address, city, index = 0, lat, lng, onAddToTrip }: InfoCardProps) {
   const [imgError,  setImgError]  = useState(false);
   const [showDesc,  setShowDesc]  = useState(false);
 
@@ -68,6 +73,7 @@ export default function InfoCard({ title, imageRef, rating, description, index =
       <TouchableOpacity
         onPressIn={onPressIn}
         onPressOut={onPressOut}
+        onPress={() => setShowDesc(true)}
         activeOpacity={1}
       >
         {/* ── Image ── */}
@@ -131,8 +137,8 @@ export default function InfoCard({ title, imageRef, rating, description, index =
 
       {/* ── Description modal ── */}
       <Modal visible={showDesc} transparent animationType="fade" onRequestClose={() => setShowDesc(false)}>
-        <TouchableOpacity style={d.overlay} activeOpacity={1} onPress={() => setShowDesc(false)}>
-          <TouchableOpacity style={d.card} activeOpacity={1}>
+        <Pressable style={d.overlay} onPress={() => setShowDesc(false)}>
+          <Pressable style={d.card} onPress={e => e.stopPropagation()}>
             <View style={d.topBar} />
             {/* Image thumbnail */}
             <Image
@@ -160,15 +166,47 @@ export default function InfoCard({ title, imageRef, rating, description, index =
                 <Text style={d.divDot}>✦</Text>
                 <View style={d.divLine} />
               </View>
+
+              {/* City + Address */}
+              {(city || address) && (
+                <View style={d.locationWrap}>
+                  {city && (
+                    <View style={d.locationRow}>
+                      <Ionicons name="business-outline" size={12} color={KINCHA} />
+                      <Text style={d.locationCity}>{city}</Text>
+                    </View>
+                  )}
+                  {address && (
+                    <View style={d.locationRow}>
+                      <Ionicons name="location-outline" size={12} color={INK_60} />
+                      <Text style={d.locationAddr}>{address}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={d.desc}>{safeDesc}</Text>
               </ScrollView>
+              {onAddToTrip && (
+                <TouchableOpacity
+                  style={d.addBtn}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setShowDesc(false);
+                    onAddToTrip({ title, imageRef, rating, description, lat, lng });
+                  }}
+                >
+                  <Ionicons name="add-circle-outline" size={16} color={WASHI} />
+                  <Text style={d.addBtnTxt}>Add to Trip</Text>
+                </TouchableOpacity>
+              )}
             </View>
             <TouchableOpacity style={d.closeBtn} onPress={() => setShowDesc(false)} activeOpacity={0.85}>
               <Ionicons name="close" size={14} color={WASHI} />
             </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
     </Animated.View>
   );
@@ -339,5 +377,45 @@ const d = StyleSheet.create({
     backgroundColor: 'rgba(28,20,16,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: BENI,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 14,
+  },
+  addBtnTxt: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: WASHI,
+    letterSpacing: 0.3,
+  },
+  locationWrap: {
+    gap: 5,
+    marginBottom: 12,
+    backgroundColor: WASHI_DARK,
+    borderRadius: 8,
+    padding: 10,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  locationCity: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: KINCHA,
+    flex: 1,
+  },
+  locationAddr: {
+    fontSize: 11,
+    color: INK_60,
+    flex: 1,
+    lineHeight: 16,
   },
 });

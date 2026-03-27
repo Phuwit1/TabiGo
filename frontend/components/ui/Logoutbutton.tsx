@@ -83,11 +83,11 @@ export default function LogoutButton({ onLogoutSuccess }: LogoutButtonProps) {
       await AsyncStorage.removeItem('access_token');
       await AsyncStorage.removeItem('refresh_token');
 
-      Alert.alert('ออกจากระบบ', 'คุณได้ออกจากระบบเรียบร้อยแล้ว');
+      Alert.alert('Signed Out', 'You have been signed out successfully.');
       if (onLogoutSuccess) onLogoutSuccess();
     } catch (error) {
       console.error('Logout error:', error);
-      Alert.alert('ผิดพลาด', 'ไม่สามารถออกจากระบบได้ ลองอีกครั้ง');
+      Alert.alert('Error', 'Unable to sign out. Please try again.');
     } finally {
       setLoading(false);
     }

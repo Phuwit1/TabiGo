@@ -19,7 +19,7 @@ model Customer {
   email        String        @db.VarChar(50) @unique
   phone_number String?       @db.VarChar(15)
   birth_date DateTime?
-  
+
   password  String
   image         String?       @db.VarChar(255)
 
@@ -29,6 +29,18 @@ model Customer {
   refreshToken  String?
   ownedTrips   TripGroup[]   @relation("CustomerToTripGroup")
   memberships  GroupMember[] @relation("CustomerToGroupMember")
+  preference   UserPreference?
+}
+
+model UserPreference {
+  preference_id  Int      @id @default(autoincrement())
+  customer_id    Int      @unique
+  travel_style   String
+  interests      String[]
+  trip_length    String
+  updatedAt      DateTime @updatedAt
+
+  customer       Customer @relation(fields: [customer_id], references: [customer_id], onDelete: Cascade)
 }
 
 model TripGroup {
@@ -51,6 +63,7 @@ model GroupMember {
   group_member_id  Int       @id @default(autoincrement())
   customer_id      Int
   trip_id          Int
+  role             String    @default("member")
   joinAt           DateTime  @default(now())
   
   customer         Customer  @relation("CustomerToGroupMember", fields: [customer_id], references: [customer_id], onDelete: Cascade)
@@ -85,13 +98,14 @@ model Expense {
 model TripPlan {
   name_group      String        @db.VarChar(50)
   plan_id      Int            @id @default(autoincrement())
-  creator_id   Int    
+  creator_id   Int
   trip_id      Int?
   start_plan_date    DateTime @db.Date
   end_plan_date      DateTime @db.Date
   day_of_trip  Int
   creat_at     DateTime       @default(now()) @db.Timestamp()
   image    String?        @db.VarChar(255)
+  city     String?        @db.VarChar(200)
 
   
   tripGroup       TripGroup?
@@ -122,9 +136,11 @@ model CacheAttraction {
   photo_ref       String?  @db.Text
   address         String?  @db.Text
   
-  last_fetched_at DateTime? 
+  last_fetched_at DateTime?
   place_types     String[] @default([])
-  
+  lat             Float?
+  lng             Float?
+
   city_id         Int
   city            City     @relation(fields: [city_id], references: [city_id])
 }

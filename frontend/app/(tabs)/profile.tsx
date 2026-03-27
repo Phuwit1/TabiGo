@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, ScrollView,
-  TouchableOpacity, Alert, Platform, Animated
+  TouchableOpacity, Alert, Platform, Animated, Modal
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -20,30 +20,14 @@ import * as ImagePicker from 'expo-image-picker';
 import ProfileSkeleton from '@/components/ui/profile/ProfileSkeleton';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// ─── Japanese Palette ────────────────────────────────────────────────────────
-const BENI         = '#C0392B';
-const BENI_LIGHT   = '#E74C3C';
-const KINCHA       = '#B8963E';
-const KINCHA_LIGHT = '#D4AF55';
-const SUMI         = '#1C1410';
-const SAKURA       = '#F2C9D0';
-const WASHI        = '#FAF5EC';
-const WASHI_DARK   = '#EDE5D8';
-const INK_60       = 'rgba(28,20,16,0.6)';
-const INK_20       = 'rgba(28,20,16,0.12)';
-const WHITE        = '#FFFFFF';
+import { BENI, BENI_LIGHT, KINCHA, KINCHA_LIGHT, SUMI, SAKURA, WASHI, WASHI_DARK, INK_60, INK_20, WHITE } from '@/constants/theme';
+import WashiDivider from '@/components/ui/WashiDivider';
+import PreferenceModal from '@/components/ui/profile/PreferenceModal';
+import { STYLE_OPTIONS, INTEREST_OPTIONS } from '@/constants/preferenceOptions';
 
 const CLOUD_NAME   = "dqghrasqe";
 const UPLOAD_PRESET = "TabiGo";
 
-// ─── Gold divider (same as budget screen) ────────────────────────────────────
-const WashiDivider = () => (
-  <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 12 }}>
-    <View style={{ flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.4 }} />
-    <Text style={{ fontSize: 9, color: KINCHA, marginHorizontal: 8, opacity: 0.55 }}>✦</Text>
-    <View style={{ flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.4 }} />
-  </View>
-);
 
 // ─── Section header pill ─────────────────────────────────────────────────────
 const SectionHeader = ({ title, kanji }: { title: string; kanji: string }) => (
@@ -67,6 +51,7 @@ const InfoRow = ({ icon, label, value }: { icon: string; label: string; value: s
   </View>
 );
 
+
 export default function ProfileScreen() {
   const [isEditing, setIsEditing]     = useState(false);
   const [showTrips, setShowTrips]     = useState(false);
@@ -78,27 +63,78 @@ export default function ProfileScreen() {
   const [uploading, setUploading]     = useState(false);
   const [isLoading, setIsLoading]     = useState(true);
 
+  // ── Change password state ─────────────────────────────────────────────────
+  const [showPwModal, setShowPwModal]   = useState(false);
+  const [pwForm, setPwForm]             = useState({ current: '', next: '', confirm: '' });
+  const [pwLoading, setPwLoading]       = useState(false);
+
+  const handleChangePassword = async () => {
+    if (!pwForm.current || !pwForm.next || !pwForm.confirm) {
+      Alert.alert('Error', 'Please fill in all fields'); return;
+    }
+    if (pwForm.next.length < 6) {
+      Alert.alert('Error', 'New password must be at least 6 characters'); return;
+    }
+    if (pwForm.next !== pwForm.confirm) {
+      Alert.alert('Error', 'New passwords do not match'); return;
+    }
+    try {
+      setPwLoading(true);
+      const token = await AsyncStorage.getItem('access_token');
+      await axios.post(`${API_URL}/change-password`,
+        { current_password: pwForm.current, new_password: pwForm.next },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      Alert.alert('Success', 'Password changed successfully');
+      setShowPwModal(false);
+      setPwForm({ current: '', next: '', confirm: '' });
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      Alert.alert('Failed', detail || 'Unable to change password');
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  // ── Preference state ─────────────────────────────────────────────────────
+  const [showPrefModal, setShowPrefModal] = useState(false);
+  const [prefStyle, setPrefStyle]     = useState<string>('');
+  const [prefInterests, setPrefInterests] = useState<string[]>([]);
+  const [prefLength, setPrefLength]   = useState<string>('');
+  const [savingPref, setSavingPref]   = useState(false);
+
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const fetchProfile = async () => {
     try {
       const token = await AsyncStorage.getItem('access_token');
       setIsLoading(true);
-      const res = await axios.get(`${API_URL}/user`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-        },
-      });
-      const userData = res.data;
-      const tripsRes = await axios.get(`${API_URL}/trip_plan`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const fullUserData = { ...userData, ownedTrips: tripsRes.data };
-      setUser(fullUserData);
-      setTempInfo(fullUserData);
-    } catch (err: any) {
-      if (err.response?.status === 401) await AsyncStorage.removeItem('access_token');
+      const headers = { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' };
+
+      const [userRes, tripsRes, prefRes] = await Promise.allSettled([
+        axios.get(`${API_URL}/user`,             { headers }),
+        axios.get(`${API_URL}/trip_plan`,         { headers }),
+        axios.get(`${API_URL}/user/preferences`,  { headers }),
+      ]);
+
+      if (userRes.status === 'fulfilled' && tripsRes.status === 'fulfilled') {
+        const fullUserData = { ...userRes.value.data, ownedTrips: tripsRes.value.data };
+        setUser(fullUserData);
+        setTempInfo(fullUserData);
+      } else if (userRes.status === 'rejected' && userRes.reason?.response?.status === 401) {
+        await AsyncStorage.removeItem('access_token');
+      }
+
+      if (prefRes.status === 'fulfilled') {
+        const p = prefRes.value.data;
+        setPrefStyle(p.travel_style ?? '');
+        setPrefInterests(p.interests ?? []);
+        setPrefLength(p.trip_length ?? '');
+        await AsyncStorage.setItem('onboarding_answers', JSON.stringify({
+          travel_style: p.travel_style,
+          interests: p.interests,
+          trip_length: p.trip_length,
+        }));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -107,6 +143,27 @@ export default function ProfileScreen() {
   useFocusEffect(React.useCallback(() => { fetchProfile(); }, []));
 
   const handleLogoutSuccess = () => router.push('/Login');
+
+  // ── Save preferences ────────────────────────────────────────────────────────
+  const handleSavePref = async () => {
+    try {
+      setSavingPref(true);
+      const token = await AsyncStorage.getItem('access_token');
+      await axios.post(
+        `${API_URL}/user/preferences`,
+        { travel_style: prefStyle, interests: prefInterests, trip_length: prefLength },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      await AsyncStorage.setItem('onboarding_answers', JSON.stringify({
+        travel_style: prefStyle, interests: prefInterests, trip_length: prefLength,
+      }));
+      setShowPrefModal(false);
+    } catch {
+      Alert.alert('Error', 'Failed to save preferences');
+    } finally {
+      setSavingPref(false);
+    }
+  };
 
   // ── Cloudinary upload ────────────────────────────────────────────────────────
   const uploadToCloudinary = async (uri: string) => {
@@ -164,8 +221,8 @@ export default function ProfileScreen() {
       const res = await axios.put(`${API_URL}/customer/${user.customer_id}`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setUser(res.data);
-      setTempInfo(res.data);
+      setUser((prev: any) => ({ ...prev, ...res.data, ownedTrips: prev.ownedTrips }));
+      setTempInfo((prev: any) => ({ ...prev, ...res.data, ownedTrips: prev.ownedTrips }));
       setIsEditing(false);
       Alert.alert('Success', 'Profile updated successfully');
     } catch {
@@ -309,6 +366,7 @@ export default function ProfileScreen() {
               <Text style={s.statLabel}>Upcoming</Text>
             </View>
           </View>
+
         </View>
 
         {/* Edit toggle */}
@@ -341,7 +399,8 @@ export default function ProfileScreen() {
               <TextInput
                 style={s.fieldInput}
                 value={tempInfo.phone_number || ''}
-                onChangeText={val => setTempInfo({ ...tempInfo, phone_number: val })}
+                onChangeText={val => setTempInfo({ ...tempInfo, phone_number: val.replace(/[^0-9]/g, '') })}
+                maxLength={10}
                 keyboardType="phone-pad"
                 placeholder="Enter phone number"
                 placeholderTextColor={INK_60}
@@ -406,6 +465,91 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      {/* ── Security card ── */}
+      <View style={s.card}>
+        <SectionHeader title="Security & Privacy" kanji="" />
+        <View style={s.securityRow}>
+          {/* Left: icon + label */}
+          <View style={s.securityLeft}>
+            <View style={s.securityIconWrap}>
+              <Ionicons name="lock-closed" size={16} color={BENI} />
+            </View>
+            <Text style={s.securityLabel}>Account Password</Text>
+          </View>
+          {/* Right: button */}
+          <TouchableOpacity style={s.resetPwBtn} onPress={() => setShowPwModal(true)} activeOpacity={0.8}>
+            <Text style={s.resetPwTxt}>Reset Password</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Interests card ── */}
+      <View style={s.card}>
+        <View style={s.sectionHeaderRow}>
+          <View style={s.sectionBar} />
+          <Text style={s.sectionTitle}>My Interests</Text>
+          <TouchableOpacity
+            style={p.editPrefBtn}
+            onPress={() => setShowPrefModal(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="pencil" size={13} color={BENI} />
+            <Text style={p.editPrefTxt}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+
+        {prefStyle ? (
+          <>
+            {/* Travel style pill */}
+            <View style={p.styleRow}>
+              <Ionicons name="person-circle-outline" size={14} color={KINCHA} />
+              <Text style={p.styleLabel}>Style</Text>
+              <View style={p.stylePill}>
+                <Text style={p.stylePillText}>
+                  {STYLE_OPTIONS.find(o => o.value === prefStyle)?.label ?? prefStyle}
+                </Text>
+              </View>
+            </View>
+
+            {/* Interest chips */}
+            {prefInterests.length > 0 && (
+              <View style={p.chipsWrap}>
+                {prefInterests.map(v => (
+                  <View key={v} style={p.chip}>
+                    <Ionicons
+                      name={INTEREST_OPTIONS.find(o => o.value === v)?.icon as any ?? 'star-outline'}
+                      size={11} color={BENI}
+                    />
+                    <Text style={p.chipText}>
+                      {INTEREST_OPTIONS.find(o => o.value === v)?.label ?? v}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        ) : (
+          <TouchableOpacity style={p.emptyPref} onPress={() => setShowPrefModal(true)} activeOpacity={0.8}>
+            <Ionicons name="add-circle-outline" size={22} color={INK_20} />
+            <Text style={p.emptyPrefText}>Set your travel interests</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── Preference modal ── */}
+      <PreferenceModal
+        visible={showPrefModal}
+        onClose={() => setShowPrefModal(false)}
+        prefStyle={prefStyle}
+        setPrefStyle={setPrefStyle}
+        prefInterests={prefInterests}
+        setPrefInterests={setPrefInterests}
+        prefLength={prefLength}
+        setPrefLength={setPrefLength}
+        onSave={handleSavePref}
+        saving={savingPref}
+      />
+
       {/* ── Travel History ── */}
       <View style={s.card}>
         <TouchableOpacity
@@ -449,7 +593,7 @@ export default function ProfileScreen() {
                         date={formattedDate}
                         budget={trip.budget?.total_budget || 0}
                         people={trip.members?.length ? trip.members.length + 1 : 1}
-                        city="Tokyo, Kyoto"
+                        city={trip.city ?? undefined}
                       />
                     </TouchableOpacity>
                   );
@@ -472,6 +616,93 @@ export default function ProfileScreen() {
       </View>
 
       <View style={{ height: 40 }} />
+
+      {/* ── Change Password Modal ── */}
+      <Modal visible={showPwModal} transparent animationType="slide">
+        <View style={s.pwBackdrop}>
+          <View style={s.pwCard}>
+            {/* Handle */}
+            <View style={s.pwHandle} />
+
+            {/* Header */}
+            <View style={s.pwHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={s.pwIconWrap}>
+                  <Ionicons name="lock-closed" size={16} color={WHITE} />
+                </View>
+                <Text style={s.pwTitle}>Change Password</Text>
+              </View>
+              <TouchableOpacity
+                style={s.pwCloseBtn}
+                onPress={() => { setShowPwModal(false); setPwForm({ current: '', next: '', confirm: '' }); }}
+              >
+                <Ionicons name="close" size={18} color={INK_60} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Divider */}
+            <View style={s.pwDivider} />
+
+            {/* Fields */}
+            <View style={{ gap: 12, marginTop: 4 }}>
+              <View style={s.pwFieldWrap}>
+                <Text style={s.pwFieldLabel}>CURRENT PASSWORD</Text>
+                <View style={s.pwInputWrap}>
+                  <Ionicons name="lock-open-outline" size={16} color={INK_60} style={{ marginRight: 8 }} />
+                  <TextInput
+                    style={s.pwInput}
+                    placeholder="Enter current password"
+                    placeholderTextColor={INK_60}
+                    secureTextEntry
+                    value={pwForm.current}
+                    onChangeText={t => setPwForm(p => ({ ...p, current: t }))}
+                  />
+                </View>
+              </View>
+
+              <View style={s.pwFieldWrap}>
+                <Text style={s.pwFieldLabel}>NEW PASSWORD</Text>
+                <View style={s.pwInputWrap}>
+                  <Ionicons name="lock-closed-outline" size={16} color={INK_60} style={{ marginRight: 8 }} />
+                  <TextInput
+                    style={s.pwInput}
+                    placeholder="At least 6 characters"
+                    placeholderTextColor={INK_60}
+                    secureTextEntry
+                    value={pwForm.next}
+                    onChangeText={t => setPwForm(p => ({ ...p, next: t }))}
+                  />
+                </View>
+              </View>
+
+              <View style={s.pwFieldWrap}>
+                <Text style={s.pwFieldLabel}>CONFIRM NEW PASSWORD</Text>
+                <View style={s.pwInputWrap}>
+                  <Ionicons name="checkmark-circle-outline" size={16} color={INK_60} style={{ marginRight: 8 }} />
+                  <TextInput
+                    style={s.pwInput}
+                    placeholder="Re-enter new password"
+                    placeholderTextColor={INK_60}
+                    secureTextEntry
+                    value={pwForm.confirm}
+                    onChangeText={t => setPwForm(p => ({ ...p, confirm: t }))}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Save button */}
+            <TouchableOpacity
+              style={[s.pwSaveBtn, pwLoading && { opacity: 0.7 }]}
+              onPress={handleChangePassword}
+              disabled={pwLoading}
+            >
+              <Ionicons name="checkmark" size={18} color={WHITE} />
+              <Text style={s.pwSaveTxt}>{pwLoading ? 'Saving...' : 'Update Password'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -628,7 +859,7 @@ const s = StyleSheet.create({
   // Edit toggle button (top-right of banner)
   editToggleBtn: {
     position: 'absolute',
-    top: 16,
+    top: 52,
     right: 18,
     flexDirection: 'row',
     alignItems: 'center',
@@ -901,4 +1132,148 @@ const s = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
+
+  // ── Change password button ──
+  changePwBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, alignSelf: 'center',
+    borderWidth: 1, borderColor: BENI,
+    paddingHorizontal: 20, paddingVertical: 10,
+    borderRadius: 8, marginTop: 8,
+    backgroundColor: 'rgba(192,57,43,0.05)',
+  },
+  securityRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  securityLeft: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  securityIconWrap: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: 'rgba(192,57,43,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  securityLabel: {
+    fontSize: 14, fontWeight: '600', color: SUMI,
+  },
+  resetPwBtn: {
+    borderWidth: 1, borderColor: BENI,
+    paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(192,57,43,0.05)',
+  },
+  resetPwTxt: {
+    fontSize: 13, fontWeight: '700', color: BENI,
+  },
+  changePwTxt: { fontSize: 14, fontWeight: '700', color: BENI },
+
+  // ── Change password modal ──
+  pwBackdrop: { flex: 1, backgroundColor: 'rgba(28,20,16,0.55)', justifyContent: 'flex-end' },
+  pwCard: {
+    backgroundColor: WASHI, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 20, paddingBottom: 32,
+  },
+  pwHandle: {
+    width: 36, height: 4, backgroundColor: INK_20, borderRadius: 2,
+    alignSelf: 'center', marginTop: 12, marginBottom: 12,
+  },
+  pwHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 20,
+  },
+  pwTitle: { fontSize: 16, fontWeight: '800', color: SUMI },
+  pwInput: {
+    flex: 1, paddingVertical: 12,
+    fontSize: 15, color: SUMI,
+  },
+  pwIconWrap: {
+    width: 28, height: 28, borderRadius: 6,
+    backgroundColor: BENI, alignItems: 'center', justifyContent: 'center',
+  },
+  pwCloseBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: WASHI_DARK, alignItems: 'center', justifyContent: 'center',
+  },
+  pwDivider: { height: 0.5, backgroundColor: INK_20, marginVertical: 16 },
+  pwFieldWrap: { gap: 6 },
+  pwFieldLabel: {
+    fontSize: 10, fontWeight: '700', color: INK_60,
+    letterSpacing: 1.2, textTransform: 'uppercase',
+  },
+  pwInputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: INK_20, backgroundColor: WASHI_DARK,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 2,
+  },
+  pwSaveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: BENI, borderRadius: 10, paddingVertical: 14,
+    marginTop: 20,
+    shadowColor: BENI, shadowOpacity: 0.3, shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 }, elevation: 4,
+  },
+  pwSaveTxt: { color: WHITE, fontSize: 15, fontWeight: '800' },
+});
+
+// ─── Preference styles ────────────────────────────────────────────────────────
+const p = StyleSheet.create({
+  editPrefBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto',
+    borderWidth: 1, borderColor: BENI, borderRadius: 4,
+    paddingHorizontal: 8, paddingVertical: 4,
+    backgroundColor: 'rgba(192,57,43,0.04)',
+  },
+  editPrefTxt: { fontSize: 11, color: BENI, fontWeight: '700' },
+
+  styleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  styleLabel: { fontSize: 11, color: INK_60, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
+  stylePill: {
+    backgroundColor: 'rgba(184,150,62,0.12)', borderRadius: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: KINCHA,
+  },
+  stylePillText: { fontSize: 12, color: KINCHA, fontWeight: '700' },
+
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(192,57,43,0.06)', borderRadius: 4,
+    borderWidth: 1, borderColor: 'rgba(192,57,43,0.2)',
+    paddingHorizontal: 8, paddingVertical: 4,
+  },
+  chipText: { fontSize: 11, color: BENI, fontWeight: '600' },
+
+  emptyPref: { alignItems: 'center', paddingVertical: 18, gap: 6 },
+  emptyPrefText: { fontSize: 13, color: INK_60 },
+
+  // Modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(28,20,16,0.55)', justifyContent: 'flex-end' },
+  modalCard: {
+    backgroundColor: WASHI, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 20, maxHeight: '85%',
+  },
+  modalHandle: {
+    width: 36, height: 4, backgroundColor: INK_20, borderRadius: 2,
+    alignSelf: 'center', marginTop: 12, marginBottom: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingBottom: 14, borderBottomWidth: 0.5, borderBottomColor: INK_20, marginBottom: 4,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: SUMI },
+
+  groupLabel: {
+    fontSize: 11, fontWeight: '700', color: INK_60,
+    letterSpacing: 1.2, textTransform: 'uppercase',
+    marginTop: 16, marginBottom: 10,
+  },
+  optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  optionChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6,
+    borderWidth: 1.2, borderColor: INK_20, backgroundColor: WASHI_DARK,
+  },
+  optionChipActive: { backgroundColor: BENI, borderColor: BENI },
+  optionChipText: { fontSize: 12, fontWeight: '600', color: SUMI },
+  optionChipTextActive: { color: WHITE },
 });

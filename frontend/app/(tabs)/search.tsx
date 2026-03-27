@@ -11,18 +11,7 @@ import SearchCard from '../../components/ui/search/searchCard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '@/api.js';
 
-// ─── Japanese Palette ─────────────────────────────────────────────────────────
-const BENI         = '#C0392B';
-const BENI_LIGHT   = '#E74C3C';
-const KINCHA       = '#B8963E';
-const KINCHA_LIGHT = '#D4AF55';
-const SUMI         = '#1C1410';
-const SAKURA       = '#F2C9D0';
-const WASHI        = '#FAF5EC';
-const WASHI_DARK   = '#EDE5D8';
-const INK_60       = 'rgba(28,20,16,0.6)';
-const INK_20       = 'rgba(28,20,16,0.12)';
-const WHITE        = '#FFFFFF';
+import { BENI, KINCHA, SUMI, WASHI, WASHI_DARK, INK_60, INK_20, WHITE } from '@/constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Attraction {
@@ -41,12 +30,7 @@ interface City {
 }
 
 // ─── Kanji mapping for well-known Japanese cities ─────────────────────────────
-const CITY_KANJI: Record<string, string> = {
-  'Tokyo':    '東京', 'Kyoto':    '京都', 'Osaka':  '大阪',
-  'Sapporo':  '札幌', 'Fukuoka':  '福岡', 'Nara':   '奈良',
-  'Hiroshima':'広島', 'Yokohama': '横浜', 'Nagoya': '名古屋',
-  'Okinawa':  '沖縄',
-};
+
 
 // ─── Gold divider (shared pattern) ───────────────────────────────────────────
 const WashiDivider = () => (
@@ -59,7 +43,6 @@ const WashiDivider = () => (
 
 // ─── City section ─────────────────────────────────────────────────────────────
 const CitySection = ({ city, sectionIndex }: { city: City; sectionIndex: number }) => {
-  const kanji   = CITY_KANJI[city.name] ?? '';
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -75,7 +58,7 @@ const CitySection = ({ city, sectionIndex }: { city: City; sectionIndex: number 
         <View style={sec.headerLeft}>
           <View style={sec.bar} />
           <Text style={sec.cityName}>{city.name}</Text>
-          {kanji ? <Text style={sec.kanji}>{kanji}</Text> : null}
+     
         </View>
         <View style={sec.countBadge}>
           <Text style={sec.countText}>{city.attractions.length}</Text>
@@ -223,7 +206,6 @@ export default function ExploreScreen() {
             <View style={s.headerLeft}>
               <View style={s.headerBar} />
               <Text style={s.headerTitle}>Explore</Text>
-              <Text style={s.headerKanji}>探索</Text>
             </View>
             {/* Sakura petal decorations */}
             <Text style={s.petal1}>🌸</Text>

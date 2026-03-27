@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, Text, StyleSheet, TouchableOpacity, 
-  ActivityIndicator, Alert, Dimensions, Platform,
-  UIManager, LayoutAnimation, ScrollView
+import React, { useState, useRef } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity,
+  ActivityIndicator, Dimensions, Platform,
+  ScrollView, Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -11,15 +11,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import dayjs from 'dayjs';
 import isBetween from 'dayjs/plugin/isBetween';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { BENI, KINCHA, SUMI, WASHI, WASHI_DARK, INK_60 } from '@/constants/theme';
 
 // Setup dayjs
 dayjs.extend(isBetween);
 dayjs.extend(customParseFormat);
 
-// เปิดใช้งาน LayoutAnimation สำหรับ Android ให้การขยายการ์ดดูสมูท
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+
+const INK_40 = 'rgba(28,20,16,0.4)';
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface FloatingChatProps {
   planId: number;
@@ -49,64 +50,83 @@ export interface RouteOption {
 }
 
 // ==========================================
-// Component ย่อย: สำหรับแสดงการ์ดเส้นทางแบบกดขยายได้
+// Component ย่อย: แสดงเส้นทางแบบ Tab + Detail Panel
 // ==========================================
 function RouteSuggestion({ options }: { options: RouteOption[] }) {
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-
-  const toggleExpand = (index: number) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedIndex(expandedIndex === index ? null : index);
-  };
+  const [selectedOption, setSelectedOption] = useState(0);
 
   if (!options || options.length === 0) return null;
 
+  const selected = options[selectedOption];
+
   return (
     <View style={routeStyles.container}>
+      {/* Header */}
       <View style={routeStyles.headerRow}>
         <View style={routeStyles.headerAccent} />
         <Text style={routeStyles.headerTitle}>เส้นทางที่แนะนำ</Text>
       </View>
 
-      {options.map((option, index) => {
-        const isExpanded = expandedIndex === index;
-        return (
-          <View key={index} style={[routeStyles.card, isExpanded && routeStyles.cardExpanded]}>
+      {/* Tab strip */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={routeStyles.tabStrip}
+      >
+        {options.map((_, index) => {
+          const active = selectedOption === index;
+          return (
             <TouchableOpacity
-              style={routeStyles.cardHeader}
-              onPress={() => toggleExpand(index)}
-              activeOpacity={0.7}
+              key={index}
+              style={[routeStyles.tab, active && routeStyles.tabActive]}
+              onPress={() => setSelectedOption(index)}
+              activeOpacity={0.75}
             >
-              {isExpanded && <View style={routeStyles.cardActiveBar} />}
-              <View style={{ flex: 1 }}>
-                <Text style={[routeStyles.optionTitle, isExpanded && routeStyles.optionTitleActive]}>
-                  {option.title}
-                </Text>
-                <View style={routeStyles.infoRow}>
-                  <Text style={routeStyles.infoText}>{option.fare}</Text>
-                  <Text style={routeStyles.infoDot}> · </Text>
-                  <Text style={routeStyles.infoText}>{option.distance}</Text>
-                </View>
-              </View>
-              <Text style={[routeStyles.chevron, isExpanded && routeStyles.chevronActive]}>
-                {isExpanded ? '▲' : '▼'}
+              <Text style={[routeStyles.tabLabel, active && routeStyles.tabLabelActive]}>
+                {`Op.${index + 1}`}
               </Text>
+              {active && <View style={routeStyles.tabDot} />}
             </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
-            {isExpanded && (
-              <View style={routeStyles.cardBody}>
-                <View style={routeStyles.timelineLine} />
-                {option.detail.map((step, stepIdx) => (
-                  <View key={stepIdx} style={routeStyles.stepContainer}>
-                    <View style={routeStyles.stepDot} />
-                    <Text style={routeStyles.stepText}>{step}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
+      {/* Detail card */}
+      <View style={routeStyles.detailCard}>
+        <View style={routeStyles.topBar} />
+
+        {/* Fare + Distance summary */}
+        <View style={routeStyles.summaryRow}>
+          <View style={routeStyles.summaryItem}>
+            <Ionicons name="card-outline" size={13} color={KINCHA} />
+            <Text style={routeStyles.summaryText}>{selected.fare}</Text>
           </View>
-        );
-      })}
+          <View style={routeStyles.summaryItem}>
+            <Ionicons name="map-outline" size={13} color={KINCHA} />
+            <Text style={routeStyles.summaryText}>{selected.distance}</Text>
+          </View>
+        </View>
+
+        {/* Kincha divider */}
+        <View style={routeStyles.divRow}>
+          <View style={routeStyles.divLine} />
+          <Text style={routeStyles.divDot}>✦</Text>
+          <View style={routeStyles.divLine} />
+        </View>
+
+        {/* Steps timeline */}
+        <View style={routeStyles.timeline}>
+          {selected.detail.map((step, idx) => (
+            <View key={idx} style={routeStyles.timelineItem}>
+              <View style={routeStyles.timelineLeft}>
+                <View style={routeStyles.dot} />
+                {idx < selected.detail.length - 1 && <View style={routeStyles.connector} />}
+              </View>
+              <Text style={routeStyles.stepText}>{step}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
     </View>
   );
 }
@@ -121,50 +141,93 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
   const [routeInfo, setRouteInfo] = useState<any>(null);
   const [nextActivity, setNextActivity] = useState<ScheduleItem | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const mapRef = useRef<MapView>(null);
 
-  // testLocation(); // เรียกฟังก์ชันทดสอบพิกัดเมื่อคอมโพเนนต์โหลด (สามารถเอาออกได้หลังจากทดสอบเสร็จ)
+  const handleClose = () => {
+    setIsOpen(false);
+    setRouteInfo(null);
+    setErrorMsg(null);
+    setUserCoords(null);
+    setNextActivity(null);
+  };
 
   // ฟังก์ชันหลักเมื่อกดปุ่ม
   const handlePress = async () => {
     if (isOpen) {
-      setIsOpen(false);
-      setRouteInfo(null);
-      setErrorMsg(null);
+      handleClose();
       return;
     }
     setIsOpen(true);
     await calculateRoute();
   };
 
-    const findNextLocation = (itinerary: ItineraryDay[]): ScheduleItem | null => {
-    const now = dayjs(); 
-    let allActivities: (ScheduleItem & { fullDateTime: dayjs.Dayjs })[] = [];
-    
-
-
-    itinerary.forEach(day => {
-      day.schedule.forEach(item => {
-        const itemDateTime = dayjs(`${day.date} ${item.time}`, "YYYY-MM-DD HH:mm");
-        if (itemDateTime.isValid()) {
-          allActivities.push({ ...item, fullDateTime: itemDateTime });
-        }
-      });
-    });
-
-    allActivities.sort((a, b) => a.fullDateTime.diff(b.fullDateTime));
-
-    console.log("All activities with datetime:", allActivities.map(a => ({
-      activity: a.activity,
-      time: a.fullDateTime.format('YYYY-MM-DD HH:mm'),
-    })));
-
-    for (const item of allActivities) {
-      console.log(`Checking activity: ${item.activity} at ${item.fullDateTime.format('YYYY-MM-DD HH:mm')}`);
-      if (item.fullDateTime.isAfter(now.subtract(10, 'minute')) && item.need_location && item.lat && item.lng) {
-
-        return item;
-      }
+  const fitMapToMarkers = () => {
+    if (mapRef.current && userCoords && nextActivity?.lat && nextActivity?.lng) {
+      mapRef.current.fitToCoordinates(
+        [
+          userCoords,
+          { latitude: nextActivity.lat, longitude: nextActivity.lng },
+        ],
+        { edgePadding: { top: 60, right: 40, bottom: 40, left: 40 }, animated: true }
+      );
     }
+  };
+
+  const findNextLocation = (itinerary: ItineraryDay[]): ScheduleItem | null => {
+    const now = dayjs();
+    const todayStr = now.format('YYYY-MM-DD');
+
+    // Sort days chronologically
+    const sortedDays = [...itinerary].sort((a, b) => dayjs(a.date).diff(dayjs(b.date)));
+    if (sortedDays.length === 0) return null;
+
+    const firstTripDateStr = sortedDays[0].date;
+    const lastTripDateStr = sortedDays[sortedDays.length - 1].date;
+
+    // After trip has ended → nothing to route
+    if (dayjs(todayStr).isAfter(dayjs(lastTripDateStr))) return null;
+
+    // Determine starting day index
+    const beforeTrip = dayjs(todayStr).isBefore(dayjs(firstTripDateStr));
+    let startIdx: number;
+
+    if (beforeTrip) {
+      // Before trip starts → begin from first trip day
+      startIdx = 0;
+    } else {
+      // During/after trip → find the first trip day that is today or later
+      startIdx = sortedDays.findIndex(d => !dayjs(d.date).isBefore(dayjs(todayStr)));
+      if (startIdx === -1) return null; // All trip days are in the past
+    }
+
+    for (let i = startIdx; i < sortedDays.length; i++) {
+      const day = sortedDays[i];
+
+      // Routeable = has lat+lng, sorted by time ascending
+      const routeable = day.schedule
+        .filter(item => item.lat !== null && item.lng !== null && item.need_location)
+        .sort((a, b) => a.time.localeCompare(b.time));
+
+      let candidates: ScheduleItem[];
+
+      if (day.date === todayStr) {
+        // Today's trip day → only future items (with 10-min grace window)
+        candidates = routeable.filter(item => {
+          const dt = dayjs(`${day.date} ${item.time}`, 'YYYY-MM-DD HH:mm');
+          return dt.isAfter(now.subtract(10, 'minute'));
+        });
+      } else {
+        // Future day (or before-trip first day) → all routeable items
+        candidates = routeable;
+      }
+
+      if (candidates.length === 0) continue; // No candidates this day → try next day
+
+      console.log(`Day ${day.date}: next location → ${candidates[0].activity} at ${candidates[0].time}`);
+      return candidates[0];
+    }
+
     return null;
   };
 
@@ -174,21 +237,22 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
     setRouteInfo(null);
 
     try {
-    
-
       // 1. ขอ Permission และหาตำแหน่งปัจจุบัน
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         throw new Error('Permission to access location was denied');
       }
-      console.log("1");
 
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      console.log("2");
 
       const origin = `${currentLocation.coords.latitude},${currentLocation.coords.longitude}`;
+      setUserCoords({
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      });
+
       // 2. ดึงข้อมูล Itinerary (Plan)
       const token = await AsyncStorage.getItem('access_token');
       const res = await axios.get(`${apiBaseUrl}/trip_schedule/${planId}`, {
@@ -202,7 +266,7 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
 
       // 3. หา Destination (กิจกรรมถัดไปที่มี Location)
       const target = findNextLocation(itineraryData);
-      
+
       if (!target) {
         throw new Error('ไม่พบกิจกรรมถัดไปที่มีสถานที่ระบุไว้');
       }
@@ -214,24 +278,24 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
       console.log(`Routing: ${origin} -> ${destination} (${target.activity})`);
 
       const route = {
-        start : origin,
-        goal : destination,
-        start_time : dayjs().format('YYYY-MM-DDTHH:mm:ss') 
+        start: origin,
+        goal: destination,
+        start_time: dayjs().format('YYYY-MM-DDTHH:mm:ss')
+      };
+
+      const routeRawRes = await axios.post(`${apiBaseUrl}/route`,
+        route,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      if (!routeRawRes.data || routeRawRes.data.error) {
+        throw new Error('ไม่พบเส้นทาง หรือ API มีปัญหา');
       }
 
-     const routeRawRes = await axios.post(`${apiBaseUrl}/route`,
-      route,
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
-      
-      if (!routeRawRes.data || routeRawRes.data.error) {
-          throw new Error('ไม่พบเส้นทาง หรือ API มีปัญหา');
-      }
-      
-      // 3. ✅ ส่งผลลัพธ์ที่ได้ไปให้ AI สรุป (POST /route/summarize)
-      const summarizeRes = await axios.post(`${apiBaseUrl}/route/summarize`, 
+      // 5. ส่งผลลัพธ์ที่ได้ไปให้ AI สรุป (POST /route/summarize)
+      const summarizeRes = await axios.post(`${apiBaseUrl}/route/summarize`,
         { route: routeRawRes.data },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -239,102 +303,110 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
       setRouteInfo(summarizeRes.data);
 
     } catch (err: any) {
-      console.log("มัน eror ละเด้อ");
-      console.error("รายละเอียด Error:", err.response?.data || err.message || err);
-      // console.error("Route Error:", err);
-      const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced, // ลดความแม่นยำลงมาที่ระดับกลาง (สำคัญมากสำหรับ Emulator)
-        });
-      console.log("พิกัดที่ได้:", location.coords);
-      
+      console.error("Route Error:", err.response?.data || err.message || err);
       setErrorMsg(err.message || "เกิดข้อผิดพลาดในการคำนวณเส้นทาง");
     } finally {
       setLoading(false);
     }
   };
 
-
-
   return (
     <View style={styles.container}>
-      {isOpen && (
-        <View style={styles.bubbleCard}>
-          {/* Top accent bar */}
-          <View style={styles.topBar} />
+      <Modal visible={isOpen} animationType="slide" transparent={false}>
+        <View style={styles.modalRoot}>
+          {/* === TOP 50%: MAP === */}
+          <View style={styles.mapContainer}>
+            {userCoords ? (
+              <MapView
+                ref={mapRef}
+                provider={PROVIDER_GOOGLE}
+                style={styles.map}
+                initialRegion={{
+                  latitude: userCoords.latitude,
+                  longitude: userCoords.longitude,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
+                }}
+                onMapReady={fitMapToMarkers}
+              >
+                <Marker
+                  coordinate={userCoords}
+                  title="ตำแหน่งของคุณ"
+                  pinColor="blue"
+                />
+                {nextActivity?.lat && nextActivity?.lng && (
+                  <Marker
+                    coordinate={{ latitude: nextActivity.lat, longitude: nextActivity.lng }}
+                    title={nextActivity.specific_location_name || nextActivity.activity}
+                    pinColor="red"
+                  />
+                )}
+              </MapView>
+            ) : (
+              <View style={styles.mapPlaceholder}>
+                <ActivityIndicator size="large" color={BENI} />
+                <Text style={styles.mapPlaceholderText}>กำลังโหลดแผนที่...</Text>
+              </View>
+            )}
 
-          {/* Header */}
-          <View style={styles.bubbleHeader}>
-            <View style={styles.headerLeft}>
-              <View style={styles.headerBar} />
-              <Text style={styles.bubbleTitle}>เส้นทางถัดไป</Text>
-            </View>
-            <TouchableOpacity style={styles.closeBtn} onPress={() => setIsOpen(false)} activeOpacity={0.7}>
-              <Ionicons name="close" size={16} color="#FAF5EC" />
+            {/* Close button floating top-right over map */}
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={handleClose} activeOpacity={0.7}>
+              <Ionicons name="close" size={22} color={WASHI} />
             </TouchableOpacity>
           </View>
 
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerDot}>✦</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          {/* === BOTTOM 50%: SHEET === */}
+          <View style={styles.bottomSheet}>
+            {/* Drag handle pill */}
+            <View style={styles.dragHandleRow}>
+              <View style={styles.dragHandle} />
+            </View>
 
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#C0392B" />
-              <Text style={styles.loadingText}>กำลังคำนวณเส้นทาง...</Text>
-            </View>
-          ) : errorMsg ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{errorMsg}</Text>
-            </View>
-          ) : routeInfo && nextActivity ? (
-            <View style={styles.infoContainer}>
-              <View style={styles.destinationBox}>
-                <Text style={styles.targetLabel}>ปลายทาง</Text>
-                <Text style={styles.targetName} numberOfLines={2}>
-                  {nextActivity.specific_location_name || nextActivity.activity}
-                </Text>
-                <Text style={styles.targetTime}>{nextActivity.time}</Text>
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={BENI} />
+                <Text style={styles.loadingText}>กำลังค้นหาพิกัดและคำนวณเส้นทาง...</Text>
               </View>
+            ) : errorMsg ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{errorMsg}</Text>
+              </View>
+            ) : routeInfo && nextActivity ? (
+              <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
+                <View style={styles.destinationBox}>
+                  <Text style={styles.targetLabel}>ปลายทาง</Text>
+                  <Text style={styles.targetName} numberOfLines={2}>
+                    {nextActivity.specific_location_name || nextActivity.activity}
+                  </Text>
+                  <Text style={styles.targetTime}>{nextActivity.time}</Text>
+                </View>
 
-              {Array.isArray(routeInfo) && routeInfo.length > 0 ? (
-                <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                {Array.isArray(routeInfo) && routeInfo.length > 0 ? (
                   <RouteSuggestion options={routeInfo} />
-                </ScrollView>
-              ) : (
-                <Text style={styles.infoText}>ไม่พบข้อมูลเส้นทาง</Text>
-              )}
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.infoText}>ไม่พบกิจกรรมถัดไปที่ต้องเดินทาง</Text>
-            </View>
-          )}
+                ) : (
+                  <Text style={styles.infoText}>ไม่พบข้อมูลเส้นทาง</Text>
+                )}
+              </ScrollView>
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.infoText}>ไม่พบกิจกรรมถัดไปที่ต้องเดินทาง</Text>
+              </View>
+            )}
+          </View>
         </View>
-      )}
+      </Modal>
 
       {/* FAB */}
       <TouchableOpacity
-        style={[styles.fab, isOpen && styles.fabActive]}
+        style={styles.fab}
         onPress={handlePress}
         activeOpacity={0.85}
       >
-        <Ionicons name={isOpen ? 'map' : 'navigate'} size={24} color="#FAF5EC" />
+        <Ionicons name="map" size={24} color={WASHI} />
       </TouchableOpacity>
     </View>
   );
 }
-
-// ── Palette ───────────────────────────────────────────────────────────────────
-const BENI        = '#C0392B';
-const KINCHA      = '#B8963E';
-const SUMI        = '#1C1410';
-
-const WASHI       = '#FAF5EC';
-const WASHI_DARK  = '#EDE5D8';
-const INK_40      = 'rgba(28,20,16,0.4)';
 
 // ==========================================
 // Styles
@@ -348,7 +420,7 @@ const styles = StyleSheet.create({
     zIndex: 9999,
   },
 
-  // ── FAB ────────────────────────────────
+  // ── FAB ────────────────────────────
   fab: {
     width: 52,
     height: 52,
@@ -364,86 +436,68 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabActive: {
-    backgroundColor: SUMI,
-    borderColor: KINCHA,
-    shadowColor: SUMI,
-  },
 
-  // ── Card ───────────────────────────────
-  bubbleCard: {
-    backgroundColor: WASHI,
-    borderRadius: 10,
-    marginBottom: 12,
-    width: 300,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: WASHI_DARK,
-    shadowColor: SUMI,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  topBar: {
-    height: 3,
-    backgroundColor: BENI,
-  },
-  bubbleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerBar: {
-    width: 3,
-    height: 16,
-    backgroundColor: BENI,
-    borderRadius: 2,
-  },
-  bubbleTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: SUMI,
-    letterSpacing: 0.3,
-  },
-  closeBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: SUMI,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // ── Divider ────────────────────────────
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    marginBottom: 6,
-  },
-  dividerLine: {
+  // ── Modal ───────────────────────────
+  modalRoot: {
     flex: 1,
-    height: 0.5,
-    backgroundColor: KINCHA,
-    opacity: 0.35,
+    backgroundColor: SUMI,
   },
-  dividerDot: {
-    fontSize: 7,
-    color: KINCHA,
-    marginHorizontal: 6,
-    opacity: 0.5,
+  mapContainer: {
+    height: SCREEN_HEIGHT * 0.5,
+    position: 'relative',
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: SUMI,
+    gap: 12,
+  },
+  mapPlaceholderText: {
+    color: WASHI,
+    fontSize: 13,
+  },
+  modalCloseBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 54 : 16,
+    right: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: INK_60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
 
-  // ── Content ────────────────────────────
+  // ── Bottom Sheet ────────────────────
+  bottomSheet: {
+    flex: 1,
+    backgroundColor: WASHI,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: -20,
+    paddingTop: 12,
+    paddingHorizontal: 16,
+  },
+  dragHandleRow: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: INK_40,
+  },
+  sheetScroll: {
+    flex: 1,
+  },
+
+  // ── Content ────────────────────────
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: 20,
@@ -454,11 +508,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: INK_40,
     letterSpacing: 0.2,
-  },
-  infoContainer: {
-    paddingHorizontal: 14,
-    paddingBottom: 14,
-    gap: 6,
   },
   destinationBox: {
     backgroundColor: WASHI_DARK,
@@ -509,19 +558,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
-  divider: {
-    height: 0.5,
-    backgroundColor: KINCHA,
-    opacity: 0.3,
-    marginVertical: 6,
-  },
 });
+
+const INK_12 = 'rgba(28,20,16,0.12)';
 
 const routeStyles = StyleSheet.create({
   container: {
     width: '100%',
     paddingTop: 2,
   },
+
+  // ── Header ─────────────────────────────
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -542,97 +589,131 @@ const routeStyles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  // ── Route card ─────────────────────────
-  card: {
-    backgroundColor: WASHI,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: WASHI_DARK,
-    overflow: 'hidden',
+  // ── Tab strip ──────────────────────────
+  tabStrip: {
+    gap: 8,
+    paddingBottom: 10,
   },
-  cardExpanded: {
-    borderColor: BENI,
-    shadowColor: BENI,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
+  tab: {
     alignItems: 'center',
-    padding: 12,
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 14,
     backgroundColor: WASHI_DARK,
+    borderWidth: 1,
+    borderColor: INK_12,
     position: 'relative',
   },
-  cardActiveBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
-    backgroundColor: BENI,
+  tabActive: {
+    backgroundColor: SUMI,
+    borderColor: SUMI,
+    shadowColor: SUMI,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  optionTitle: {
+  tabLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: SUMI,
-    marginBottom: 3,
-  },
-  optionTitleActive: {
-    color: BENI,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  infoText: {
-    fontSize: 11,
     color: INK_40,
   },
-  infoDot: {
-    fontSize: 11,
-    color: KINCHA,
-    opacity: 0.5,
+  tabLabelActive: {
+    color: WASHI,
   },
-  chevron: {
-    fontSize: 10,
-    color: INK_40,
-    marginLeft: 6,
-  },
-  chevronActive: {
-    color: BENI,
+  tabDot: {
+    position: 'absolute',
+    bottom: -1,
+    left: '50%',
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: BENI,
+    transform: [{ translateX: -2 }],
   },
 
-  // ── Card body / timeline ───────────────
-  cardBody: {
-    padding: 12,
-    paddingLeft: 22,
+  // ── Detail card ────────────────────────
+  detailCard: {
+    borderRadius: 12,
     backgroundColor: WASHI,
-    position: 'relative',
+    borderWidth: 1,
+    borderColor: INK_12,
+    overflow: 'hidden',
+    shadowColor: SUMI,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  timelineLine: {
-    position: 'absolute',
-    left: 26,
-    top: 16,
-    bottom: 16,
-    width: 1.5,
-    backgroundColor: WASHI_DARK,
+  topBar: {
+    height: 2,
+    backgroundColor: BENI,
   },
-  stepContainer: {
+  summaryRow: {
     flexDirection: 'row',
-    marginBottom: 10,
-    alignItems: 'flex-start',
+    gap: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  stepDot: {
+  summaryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flex: 1,
+  },
+  summaryText: {
+    fontSize: 12,
+    color: SUMI,
+    fontWeight: '600',
+    flex: 1,
+  },
+
+  // ── Kincha divider ─────────────────────
+  divRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+  divLine: {
+    flex: 1,
+    height: 0.5,
+    backgroundColor: KINCHA,
+    opacity: 0.3,
+  },
+  divDot: {
+    fontSize: 7,
+    color: KINCHA,
+    marginHorizontal: 7,
+    opacity: 0.45,
+  },
+
+  // ── Timeline ───────────────────────────
+  timeline: {
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+  },
+  timelineItem: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  timelineLeft: {
+    alignItems: 'center',
+    width: 16,
+  },
+  dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: BENI,
     marginTop: 5,
-    marginRight: 10,
-    zIndex: 1,
+  },
+  connector: {
+    width: 1.5,
+    flex: 1,
+    backgroundColor: INK_12,
+    marginVertical: 3,
   },
   stepText: {
     flex: 1,
@@ -640,5 +721,6 @@ const routeStyles = StyleSheet.create({
     color: SUMI,
     lineHeight: 18,
     opacity: 0.85,
+    paddingBottom: 12,
   },
 });

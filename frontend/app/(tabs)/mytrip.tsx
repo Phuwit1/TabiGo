@@ -19,18 +19,8 @@ import TripListSkeleton from '@/components/ui/trip/TripListSkeleton';
 import { Alert } from 'react-native';
 import SakuraBackground from '@/components/ui/sakurabackground';
 
-// ─── Japanese Palette ─────────────────────────────────────────────────────────
-const BENI         = '#C0392B';
-const BENI_LIGHT   = '#E74C3C';
-const KINCHA       = '#B8963E';
-const KINCHA_LIGHT = '#D4AF55';
-const SUMI         = '#1C1410';
-const SAKURA       = '#F2C9D0';
-const WASHI        = '#FAF5EC';
-const WASHI_DARK   = '#EDE5D8';
-const INK_60       = 'rgba(28,20,16,0.6)';
-const INK_20       = 'rgba(28,20,16,0.12)';
-const WHITE        = '#FFFFFF';
+import { BENI, BENI_LIGHT, KINCHA, KINCHA_LIGHT, SUMI, SAKURA, WASHI, WASHI_DARK, INK_60, INK_20, WHITE } from '@/constants/theme';
+import WashiDivider from '@/components/ui/WashiDivider';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Trip = {
@@ -64,14 +54,6 @@ const formatTripDateRange = (startStr: string, endStr: string): string => {
   return `${startDate}–${endDate} ${monthName} '${year}`;
 };
 
-// ─── Gold divider ─────────────────────────────────────────────────────────────
-const WashiDivider = () => (
-  <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8 }}>
-    <View style={{ flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.35 }} />
-    <Text style={{ fontSize: 8, color: KINCHA, marginHorizontal: 7, opacity: 0.5 }}>✦</Text>
-    <View style={{ flex: 1, height: 0.5, backgroundColor: KINCHA, opacity: 0.35 }} />
-  </View>
-);
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 const EmptyTripState = ({ router }: { router: any }) => {
@@ -88,7 +70,6 @@ const EmptyTripState = ({ router }: { router: any }) => {
   return (
     <Animated.View style={[s.emptyWrap, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
       {/* Kanji watermark */}
-      <Text style={s.emptyKanji}>旅</Text>
 
       {/* Icon ring */}
       <View style={s.emptyIconRing}>
@@ -205,18 +186,14 @@ export default function TripListScreen() {
           const token = await AsyncStorage.getItem('access_token');
           if (!token) { setIsGuest(true); setLoading(false); return; }
           setIsGuest(false);
-          try {
-            const userRes = await axios.get(`${API_URL}/user`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            setCurrentUser(userRes.data);
-          } catch {}
+          const [userRes, tripsRes] = await Promise.allSettled([
+            axios.get(`${API_URL}/user`,      { headers: { Authorization: `Bearer ${token}` } }),
+            axios.get(`${API_URL}/trip_plan`, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }),
+          ]);
 
-          const res = await axios.get(`${API_URL}/trip_plan`, {
-            headers: { Authorization: `Bearer ${token}` },
-            timeout: 10000,
-          });
-          setTrips(Array.isArray(res.data) ? res.data : []);
+          if (userRes.status === 'fulfilled') setCurrentUser(userRes.value.data);
+          if (tripsRes.status === 'rejected') throw tripsRes.reason;
+          setTrips(Array.isArray(tripsRes.value.data) ? tripsRes.value.data : []);
         } catch (err: any) {
           try {
             const offlineTrips = await db.getAllAsync('SELECT * FROM TripPlan');

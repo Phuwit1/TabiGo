@@ -51,6 +51,7 @@ type Props = {
   planId: number;
   startDate: string;
   endDate: string;
+  canEdit?: boolean;
 };
 
 function buildDayRange(startISO: string, endISO: string): string[] {
@@ -62,7 +63,7 @@ function buildDayRange(startISO: string, endISO: string): string[] {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const DailyPlanTabs = forwardRef<DailyPlanTabsHandle, Props>(function DailyPlanTabs(
-  { planId, startDate, endDate }, ref,
+  { planId, startDate, endDate, canEdit = true }, ref,
 ) {
   const db = useSQLiteContext();
   const router = useRouter();
@@ -178,7 +179,7 @@ const DailyPlanTabs = forwardRef<DailyPlanTabsHandle, Props>(function DailyPlanT
             </Text>
           </View>
 
-          {netStatus && (
+          {netStatus && canEdit && (
             <TouchableOpacity style={s.editBtn} onPress={handleEdit} activeOpacity={0.8}>
               <Ionicons name="create-outline" size={13} color={WASHI} />
               <Text style={s.editBtnText}>Edit</Text>

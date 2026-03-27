@@ -1,19 +1,13 @@
-from fastapi import FastAPI
 import socketio
-import uvicorn
 from datetime import datetime
 from typing import Dict
 
-app = FastAPI()
-
 sio = socketio.AsyncServer(
-    async_mode='asgi', 
+    async_mode='asgi',
     cors_allowed_origins='*',
     logger=True,
     engineio_logger=False
 )
-
-socket_app = socketio.ASGIApp(sio, app)
 
 # ==========================================
 # 💾 ส่วนที่เพิ่ม/แก้ไขข้อมูล (Data Store)
@@ -27,20 +21,6 @@ user_names: Dict[str, str] = {}
 
 # เก็บ location แยกตาม group: {group_id: {socket_id: location_data}}
 group_locations: Dict[str, Dict[str, dict]] = {}
-
-@app.get("/api/status")
-async def get_status():
-    groups_info = {}
-    for group_id, locations in group_locations.items():
-        groups_info[group_id] = len(locations)
-    
-    return {
-        "status": "online",
-        "total_users": len(user_groups),
-        "groups": groups_info,
-        # (Optional) ดูรายชื่อคนทั้งหมดเพื่อ debug
-        "users_list": list(user_names.values()) 
-    }
 
 @sio.event
 async def connect(sid, environ):
@@ -69,9 +49,9 @@ async def handle_leave_group(sid, group_id):
         del user_names[sid]
     
     if group_id in group_locations and sid in group_locations[group_id]:
-        del group_locations[group_id][sid]
-        if not group_locations[group_id]:
-            del group_locations[group_id]
+        group_locations[group_id][sid]['is_online'] = False
+        group_locations[group_id][sid]['updated_at'] = datetime.now().isoformat()
+        await sio.emit('location_update', group_locations[group_id][sid], room=group_id)
     
     # แจ้งคนอื่นใน group ว่าใครออก
     await sio.emit('user_left', {
@@ -159,7 +139,8 @@ async def update_location(sid, data):
         'lat': lat,
         'lng': lng,
         'timestamp': data.get('timestamp'),
-        'updated_at': datetime.now().isoformat()
+        'updated_at': datetime.now().isoformat(),
+        'is_online': True,
     }
     
     group_locations[group_id][sid] = location_data
@@ -172,17 +153,3 @@ async def update_location(sid, data):
         "username": username
     }
 
-if __name__ == '__main__':
-    print("="*60)
-    print("🚀 Socket.IO Server with Group System")
-    print("="*60)
-    print("📍 Endpoints:")
-    print("   - WebSocket: ws://0.0.0.0:8010")
-    print("   - Status API: http://0.0.0.0:8010/api/status")
-    print("="*60)
-    print("📋 Events:")
-    print("   - join_group: เข้า group")
-    print("   - leave_group: ออกจาก group")
-    print("   - update_location: ส่ง location (ต้องอยู่ใน group)")
-    print("="*60)
-    uvicorn.run(socket_app, host='0.0.0.0', port=8010, log_level="warning")

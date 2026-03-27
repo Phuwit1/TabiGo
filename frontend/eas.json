@@ -9,7 +9,17 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "cache": {
+        "disabled": true
+      },
+      "env": {
+        "ANDROID_GOOGLE_MAPS_API_KEY": "AIzaSyDgqf931NIWbYSDGP6pfhwSOPWacpXQelE",
+        "GOOGLE_API_KEY": "AIzaSyA73tpAfskui7aqX9GXabfGLU0OZ5HLC-U"
+      }
     },
     "production": {
       "autoIncrement": true

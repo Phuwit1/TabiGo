@@ -17,17 +17,7 @@ import WrongAnimation from '@/components/ui/Alert/WrongAnimation';
 
 dayjs.locale('en');
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
-const BENI         = '#C0392B';
-const KINCHA       = '#B8963E';
-const KINCHA_LIGHT = '#D4AF55';
-const SUMI         = '#1C1410';
-const WASHI        = '#FAF5EC';
-const WASHI_DARK   = '#EDE5D8';
-const WHITE        = '#FFFFFF';
-const INK_60       = 'rgba(28,20,16,0.6)';
-const INK_30       = 'rgba(28,20,16,0.3)';
-const INK_12       = 'rgba(28,20,16,0.12)';
+import { BENI, KINCHA, KINCHA_LIGHT, SUMI, WASHI, WASHI_DARK, WHITE, INK_60, INK_30, INK_12 } from '@/constants/theme';
 
 type City = { id: number; name: string };
 
@@ -68,12 +58,14 @@ export default function TripDetail() {
         const headers: any = { 'Content-Type': 'application/json' };
         if (token) headers.Authorization = `Bearer ${token}`;
 
-        const res = await axios.get(`${API_URL}/trip_schedule/${planId}`, { headers });
+        const [res, citiesRes] = await Promise.all([
+          axios.get(`${API_URL}/trip_schedule/${planId}`, { headers }),
+          axios.get(`${API_URL}/cities`),
+        ]);
         const payload = res.data?.payload;
         setSchedule(payload);
         setEditedSchedule(JSON.parse(JSON.stringify(payload)));
 
-        const citiesRes = await axios.get(`${API_URL}/cities`);
         if (citiesRes.data && Array.isArray(citiesRes.data.items)) {
           setAllCities(citiesRes.data.items);
         }
@@ -411,7 +403,7 @@ export default function TripDetail() {
               </Text>
             </ScrollView>
 
-            <View style={{ paddingHorizontal: 16, paddingBottom: 18 }}>
+            <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 18 }}>
               <TouchableOpacity style={m.updateBtn} onPress={() => setCommentModalVisible(false)} activeOpacity={0.85}>
                 <Text style={m.updateBtnText}>Close</Text>
               </TouchableOpacity>
@@ -585,7 +577,7 @@ const m = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerAccent: { width: 3, height: 15, backgroundColor: BENI, borderRadius: 99 },
-  title: { fontSize: 15, fontFamily: 'ShipporiMincho_700Bold', color: SUMI },
+  title: { fontSize: 18, fontFamily: 'ShipporiMincho_700Bold', color: SUMI, letterSpacing: 0.3, textShadowColor: 'rgba(28,20,16,0.25)', textShadowOffset: { width: 0.5, height: 0.5 }, textShadowRadius: 0.5 },
   closeBtn: { width: 26, height: 26, borderRadius: 99, backgroundColor: SUMI, alignItems: 'center', justifyContent: 'center' },
 
   body: { paddingHorizontal: 16, paddingBottom: 18 },
@@ -626,7 +618,7 @@ const m = StyleSheet.create({
   cancelBtnText: { fontSize: 13, fontFamily: 'NotoSansJP_500Medium', color: INK_60 },
   updateBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 11, borderRadius: 99, backgroundColor: BENI,
+    paddingVertical: 5, borderRadius: 20, backgroundColor: BENI,
     shadowColor: BENI, shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3,
   },
   updateBtnText: { fontSize: 13, fontFamily: 'NotoSansJP_700Bold', color: WASHI },
