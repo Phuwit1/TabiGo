@@ -42,6 +42,21 @@ export default function MemberLocationMap({ groupCode, userId, userName, onClose
         return () => stopTracking();
     }, [groupCode]);
 
+    // Auto-fit map whenever othersLocations changes (new friend location received)
+    useEffect(() => {
+        if (!myLocation || !mapRef.current) return;
+        const others = Object.values(othersLocations) as any[];
+        if (others.length === 0) return;
+        const coords = [
+            myLocation,
+            ...others.map((l: any) => ({ latitude: l.latitude, longitude: l.longitude })),
+        ];
+        mapRef.current.fitToCoordinates(coords, {
+            edgePadding: { top: 120, right: 60, bottom: 80, left: 60 },
+            animated: true,
+        });
+    }, [othersLocations]);
+
     const startTracking = async () => {
         // 1. ขอ Permission
         let { status } = await Location.requestForegroundPermissionsAsync();
@@ -58,6 +73,7 @@ export default function MemberLocationMap({ groupCode, userId, userName, onClose
         socket.off('user_left');
 
         socket.on('location_update', (data: any) => {
+            console.log('[Socket] location_update received:', data);
             setOthersLocations((prev: any) => ({
                 ...prev,
                 [data.username]: {
@@ -80,6 +96,7 @@ export default function MemberLocationMap({ groupCode, userId, userName, onClose
         // emit join_group หลังจาก listeners พร้อมแล้ว
         // ถ้า socket ยังไม่ได้ connect → รอ connect แล้วค่อย emit
         const emitJoin = () => {
+            console.log('[Socket] joining group:', groupCode, 'as:', userName);
             socket.emit('join_group', { group_id: groupCode, username: userName });
             setStatus(`Online: ${groupCode}`);
         };
@@ -91,24 +108,33 @@ export default function MemberLocationMap({ groupCode, userId, userName, onClose
             socket.connect();
         }
 
-        // 3. เริ่มส่งตำแหน่งตัวเอง
+        // 3. ดึง location ทันทีก่อน เพื่อให้ map render ได้เลย
+        try {
+            const current = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+            });
+            const { latitude, longitude } = current.coords;
+            console.log('[Location] got initial position:', latitude, longitude);
+            setMyLocation({ latitude, longitude });
+            socket.emit('update_location', { lat: latitude, lng: longitude, timestamp: new Date().toISOString() });
+        } catch (e) {
+            console.warn('[Location] getCurrentPosition failed:', e);
+        }
+
+        // 4. Watch สำหรับ update ต่อเนื่อง
         locationSubscription.current = await Location.watchPositionAsync(
             {
                 accuracy: Location.Accuracy.High,
-                timeInterval: 5000, 
-                distanceInterval: 10, 
+                timeInterval: 5000,
+                distanceInterval: 10,
             },
             (loc) => {
                 const { latitude, longitude } = loc.coords;
                 setMyLocation({ latitude, longitude });
-
-                // ✅ 3. แก้ชื่อ Event ส่งเป็น 'update_location' และส่ง key 'lat', 'lng'
                 socket.emit('update_location', {
-                    lat: latitude, 
+                    lat: latitude,
                     lng: longitude,
-                    timestamp: new Date().toISOString()
-                    // ไม่ต้องส่ง group_id เพราะ backend จำจาก session (user_groups) ได้แล้ว
-                    // แต่ถ้า Backend หลุดอาจต้อง join ใหม่ (ใน get_location.py เช็ค sid in user_groups)
+                    timestamp: new Date().toISOString(),
                 });
             }
         );
@@ -177,6 +203,18 @@ export default function MemberLocationMap({ groupCode, userId, userName, onClose
                     showsUserLocation={true}
                     showsMyLocationButton={false}
                 >
+                    {/* Marker ของตัวเอง */}
+                    <Marker
+                        coordinate={myLocation}
+                        title={userName}
+                        description="ตำแหน่งของคุณ"
+                        tracksViewChanges={false}
+                    >
+                        <View style={[styles.customMarker, styles.myMarker]}>
+                            <Ionicons name="person" size={16} color="white" />
+                        </View>
+                    </Marker>
+
                     {/* Marker ของเพื่อน */}
                     {Object.entries(othersLocations).map(([sid, loc]: any) => (
                         <Marker
@@ -237,6 +275,9 @@ const styles = StyleSheet.create({
     },
     customMarkerOffline: {
         backgroundColor: '#9E9E9E',
+    },
+    myMarker: {
+        backgroundColor: '#007AFF',
     },
     calloutView: { padding: 4, alignItems: 'center', minWidth: 100 },
     calloutTitle: { fontWeight: 'bold', fontSize: 14 },

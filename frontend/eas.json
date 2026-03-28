@@ -17,8 +17,8 @@
         "disabled": true
       },
       "env": {
-        "ANDROID_GOOGLE_MAPS_API_KEY": "AIzaSyDgqf931NIWbYSDGP6pfhwSOPWacpXQelE",
-        "GOOGLE_API_KEY": "AIzaSyA73tpAfskui7aqX9GXabfGLU0OZ5HLC-U"
+        "ANDROID_GOOGLE_MAPS_API_KEY": "AIzaSyB1FfJkRRPeys4Gr76GEWoG7cvvEW7NzFc",
+        "GOOGLE_API_KEY": "AIzaSyB1FfJkRRPeys4Gr76GEWoG7cvvEW7NzFc"
       }
     },
     "production": {

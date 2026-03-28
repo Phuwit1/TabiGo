@@ -17,7 +17,7 @@ import DraggableFlatList, { ScaleDecorator, RenderItemParams } from 'react-nativ
 import dayjs from 'dayjs';
 import LottieView from 'lottie-react-native';
 
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyA73tpAfskui7aqX9GXabfGLU0OZ5HLC-U';
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyB1FfJkRRPeys4Gr76GEWoG7cvvEW7NzFc';
 
 import { BENI, KINCHA, KINCHA_LIGHT, SUMI, WASHI, WASHI_DARK, WHITE, INK_60, INK_30, INK_12 } from '@/constants/theme';
 const BENI_LIGHT = 'rgba(192,57,43,0.08)';

@@ -62,6 +62,11 @@ class TripPlanUpdate(BaseModel):
     day_of_trip: Optional[int] = None
     image: Optional[str] = None
     city: Optional[str] = None
+
+class TripPlanDuplicateIn(BaseModel):
+    name_group: str
+    start_plan_date: datetime
+    image: Optional[str] = None
     
 class TripSchedule(BaseModel):
     plan_id: int

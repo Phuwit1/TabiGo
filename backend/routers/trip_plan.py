@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from prisma import Prisma, types
 from prisma.errors import ForeignKeyViolationError, UniqueViolationError, RecordNotFoundError
-from datetime import datetime, date as D, time as T
+from datetime import datetime, timedelta, date as D, time as T
 import json
 from typing import Any
 from dependencies import get_db, get_current_user
-from schemas import TripPlan, TripSchedule, TripScheduleDocIn, TripScheduleBulkRequest, TripPlanUpdate
+from schemas import TripPlan, TripSchedule, TripScheduleDocIn, TripScheduleBulkRequest, TripPlanUpdate, TripPlanDuplicateIn
 
 router = APIRouter(tags=["Plan & Schedule"])
 
@@ -125,6 +125,56 @@ async def update_trip_plan(plan_id: int, trip_plan: TripPlanUpdate, db: Prisma =
         print(f"Error updating trip plan: {e}")
         # แนะนำให้ return status code ที่ถูกต้อง
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/trip_plan/{plan_id}/duplicate")
+async def duplicate_trip_plan(
+    plan_id: int,
+    body: TripPlanDuplicateIn,
+    db: Prisma = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    source = await db.tripplan.find_unique(where={"plan_id": plan_id})
+    if not source:
+        raise HTTPException(status_code=404, detail="Source trip plan not found")
+
+    duration_days = (source.end_plan_date.date() - source.start_plan_date.date()).days
+    new_start = body.start_plan_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    new_end = new_start + timedelta(days=duration_days)
+    resolved_image = body.image if body.image is not None else source.image
+
+    new_plan = await db.tripplan.create(
+        data={
+            "name_group": body.name_group,
+            "start_plan_date": new_start,
+            "end_plan_date": new_end,
+            "day_of_trip": duration_days + 1,
+            "image": resolved_image,
+            "city": source.city,
+            "creator_id": current_user.customer_id,
+            "budget": {"create": {"total_budget": 0}},
+        },
+        include={"budget": True},
+    )
+
+    source_schedule = await db.tripschedule.find_first(where={"plan_id": plan_id})
+    if source_schedule:
+        payload = source_schedule.payload
+        if not isinstance(payload, str):
+            payload = json.dumps(payload, ensure_ascii=False)
+        await db.tripschedule.create(
+            data={"plan_id": new_plan.plan_id, "payload": payload}
+        )
+
+    return {
+        "plan_id": new_plan.plan_id,
+        "name_group": new_plan.name_group,
+        "start_plan_date": new_plan.start_plan_date,
+        "end_plan_date": new_plan.end_plan_date,
+        "image": new_plan.image,
+        "city": new_plan.city,
+        "day_of_trip": new_plan.day_of_trip,
+    }
+
 
 # --- Trip Schedule ---
 EPOCH_DATE = D(1970, 1, 1)

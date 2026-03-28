@@ -12,6 +12,7 @@ import { API_URL } from '@/api.js';
 import {
   BENI, KINCHA, KINCHA_LIGHT, SUMI, WASHI, WASHI_DARK, INK_60, INK_20, WHITE,
 } from '@/constants/theme';
+import DuplicateModal from './DuplicateModal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 export interface PastTrip {
@@ -46,7 +47,8 @@ const formatRange = (s: string, e: string) => {
 export default function PastTripCard({ trip, index = 0 }: { trip: PastTrip; index?: number }) {
   const router = useRouter();
 
-  const [showModal, setShowModal]     = useState(false);
+  const [showModal, setShowModal]         = useState(false);
+  const [showDuplicate, setShowDuplicate] = useState(false);
   const [itinerary, setItinerary]     = useState<DayItem[]>([]);
   const [loadingSched, setLoadingSched] = useState(false);
   const [activeDay, setActiveDay]     = useState(0);
@@ -246,19 +248,18 @@ export default function PastTripCard({ trip, index = 0 }: { trip: PastTrip; inde
                 </>
               )}
 
-              {/* Plan Again — pinned at bottom of body */}
+              {/* Footer buttons */}
               <View style={m.footer}>
-                <TouchableOpacity
-                  style={m.planBtn}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    setShowModal(false);
-                    router.push('/trip/after-create' as any);
-                  }}
-                >
-                  <Ionicons name="add-circle-outline" size={16} color={WHITE} />
-                  <Text style={m.planBtnText}>Plan Again</Text>
-                </TouchableOpacity>
+                <View style={m.footerRow}>
+                  <TouchableOpacity
+                    style={m.planBtn}
+                    activeOpacity={0.85}
+                    onPress={() => setShowDuplicate(true)}
+                  >
+                    <Ionicons name="copy-outline" size={15} color={WHITE} />
+                    <Text style={m.planBtnText}>Create your own plan</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
@@ -269,6 +270,17 @@ export default function PastTripCard({ trip, index = 0 }: { trip: PastTrip; inde
           </Pressable>
         </Pressable>
       </Modal>
+
+      <DuplicateModal
+        visible={showDuplicate}
+        trip={trip}
+        onClose={() => setShowDuplicate(false)}
+        onSuccess={(newPlanId) => {
+          setShowDuplicate(false);
+          setShowModal(false);
+          router.push(`/trip/${newPlanId}` as any);
+        }}
+      />
     </Animated.View>
   );
 }
@@ -467,8 +479,10 @@ const m = StyleSheet.create({
   actDesc:    { fontSize: 11, color: INK_60, marginTop: 2, lineHeight: 15 },
 
   // Footer
-  footer: { paddingHorizontal: 16, paddingVertical: 14 },
+  footer:    { paddingHorizontal: 16, paddingVertical: 14 },
+  footerRow: { flexDirection: 'row', gap: 8 },
   planBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -477,7 +491,9 @@ const m = StyleSheet.create({
     paddingVertical: 11,
     borderRadius: 10,
   },
-  planBtnText: { fontSize: 13, fontWeight: '700', color: WHITE, letterSpacing: 0.3 },
+  planBtnOutline:    { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: BENI },
+  planBtnText:       { fontSize: 13, fontWeight: '700', color: WHITE, letterSpacing: 0.3 },
+  planBtnTextOutline:{ color: BENI },
 
   closeBtn: {
     position: 'absolute',

@@ -1,68 +1,71 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated, ScrollView } from 'react-native';
+import { WASHI, WASHI_DARK, KINCHA, BENI, SUMI } from '@/constants/theme';
 
 export default function TripListSkeleton() {
-  // สร้าง Animation กะพริบจางๆ (Pulse Effect)
-  const fadeAnim = useRef(new Animated.Value(0.3)).current;
+  const fadeAnim = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(fadeAnim, {
-          toValue: 0.7,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0.3,
-          duration: 800,
-          useNativeDriver: true,
-        }),
+        Animated.timing(fadeAnim, { toValue: 1,   duration: 750, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 0.5, duration: 750, useNativeDriver: true }),
       ])
     ).start();
-  }, [fadeAnim]);
+  }, []);
 
-  // Component ย่อยสำหรับวาดบล็อกแต่ละก้อน
-  const SkeletonBlock = ({ width, height, borderRadius = 4, style }: any) => (
-    <Animated.View
-      style={[
-        {
-          width,
-          height,
-          borderRadius,
-          backgroundColor: '#E2E8F0', // สีเทาอ่อน
-          opacity: fadeAnim,
-        },
-        style,
-      ]}
-    />
+  const Block = ({ width, height, radius = 4, style }: { width: number | string; height: number; radius?: number; style?: any }) => (
+    <Animated.View style={[{ width, height, borderRadius: radius, backgroundColor: WASHI_DARK, opacity: fadeAnim }, style]} />
   );
 
-  // วาดโครงสร้างให้เหมือน TripCard ของคุณ
   const SkeletonCard = () => (
-    <View style={styles.card}>
-      {/* ส่วนหัว: ชื่อทริป และ ปุ่ม/สถานะ */}
-      <View style={styles.header}>
-        <SkeletonBlock width="60%" height={24} borderRadius={6} />
-        <SkeletonBlock width={60} height={24} borderRadius={12} />
-      </View>
+    <View style={s.card}>
+      {/* Left accent stripe */}
+      <Animated.View style={[s.stripe, { opacity: fadeAnim }]} />
 
-      {/* ส่วนเนื้อหา: รูปภาพซ้าย รายละเอียดขวา */}
-      <View style={styles.body}>
-        <SkeletonBlock width={130} height={110} borderRadius={8} />
-        <View style={styles.details}>
-          <SkeletonBlock width="80%" height={14} style={{ marginBottom: 12 }} />
-          <SkeletonBlock width="60%" height={14} style={{ marginBottom: 12 }} />
-          <SkeletonBlock width="70%" height={14} style={{ marginBottom: 12 }} />
-          <SkeletonBlock width="50%" height={14} />
+      <View style={s.inner}>
+        {/* Header row: name + status badge */}
+        <View style={s.headerRow}>
+          <Block width="55%" height={15} radius={5} />
+          <Block width={72} height={20} radius={3} />
+        </View>
+
+        {/* Body: image + detail rows */}
+        <View style={s.bodyRow}>
+          {/* Image placeholder */}
+          <Block width={110} height={82} radius={5} />
+
+          {/* Detail rows */}
+          <View style={s.details}>
+            <View style={s.detailRow}>
+              <Block width={24} height={24} radius={12} />
+              <Block width="55%" height={12} radius={4} />
+            </View>
+            <View style={s.divider} />
+            <View style={s.detailRow}>
+              <Block width={24} height={24} radius={12} />
+              <Block width="40%" height={12} radius={4} />
+            </View>
+            <View style={s.divider} />
+            <View style={s.detailRow}>
+              <Block width={24} height={24} radius={12} />
+              <Block width="50%" height={12} radius={4} />
+            </View>
+          </View>
+        </View>
+
+        {/* Bottom kincha rule */}
+        <View style={s.bottomRule}>
+          <Animated.View style={[s.ruleLine, { opacity: fadeAnim }]} />
+          <Animated.View style={[s.ruleDot, { opacity: fadeAnim }]} />
+          <Animated.View style={[s.ruleLine, { opacity: fadeAnim }]} />
         </View>
       </View>
     </View>
   );
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} style={styles.container}>
-      {/* วาดการ์ดหลอกๆ สัก 3-4 ใบเพื่อให้เต็มหน้าจอ */}
+    <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, paddingTop: 8 }}>
       <SkeletonCard />
       <SkeletonCard />
       <SkeletonCard />
@@ -72,36 +75,74 @@ export default function TripListSkeleton() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingTop: 8,
-  },
+const s = StyleSheet.create({
   card: {
+    flexDirection: 'row',
+    backgroundColor: WASHI,
+    borderRadius: 8,
+    marginBottom: 12,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#F0F0F0',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    backgroundColor: '#FFFFFF',
-    // เพิ่มเงาเบาๆ
-    shadowColor: '#000',
+    borderColor: WASHI_DARK,
+    shadowColor: SUMI,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
     elevation: 2,
   },
-  header: {
+  stripe: {
+    width: 3,
+    alignSelf: 'stretch',
+    backgroundColor: BENI,
+    opacity: 0.35,
+  },
+  inner: {
+    flex: 1,
+    padding: 13,
+  },
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
   },
-  body: {
+  bodyRow: {
     flexDirection: 'row',
+    gap: 12,
+    marginBottom: 10,
   },
   details: {
     flex: 1,
-    marginLeft: 12,
     justifyContent: 'center',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 5,
+  },
+  divider: {
+    height: 0.5,
+    backgroundColor: WASHI_DARK,
+    marginLeft: 32,
+  },
+  bottomRule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ruleLine: {
+    flex: 1,
+    height: 0.5,
+    backgroundColor: KINCHA,
+    opacity: 0.3,
+  },
+  ruleDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: KINCHA,
+    marginHorizontal: 6,
+    opacity: 0.4,
   },
 });

@@ -8,6 +8,7 @@ import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import SearchCard from '../../components/ui/search/searchCard';
+import AddToTripModal from '@/components/ui/home/AddToTripModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '@/api.js';
 
@@ -21,6 +22,8 @@ interface Attraction {
   rating: number | null;
   description: string | null;
   local_image_path?: string | null;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 interface City {
@@ -42,7 +45,7 @@ const WashiDivider = () => (
 );
 
 // ─── City section ─────────────────────────────────────────────────────────────
-const CitySection = ({ city, sectionIndex }: { city: City; sectionIndex: number }) => {
+const CitySection = ({ city, sectionIndex, onAddToTrip }: { city: City; sectionIndex: number; onAddToTrip: (a: Attraction) => void }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -79,6 +82,7 @@ const CitySection = ({ city, sectionIndex }: { city: City; sectionIndex: number 
             rating={attr.rating}
             index={i}
             onPress={() => console.log('Tapped: \n Photo_ref:', attr.photo_ref, '\n Name:', attr.name)}
+            onAddToTrip={() => onAddToTrip(attr)}
             style={{ marginRight: 12 }}
           />
         ))}
@@ -145,6 +149,7 @@ export default function ExploreScreen() {
   const [cityData, setCityData]     = useState<City[]>([]);
   const [searchText, setSearchText] = useState('');
   const [loading, setLoading]       = useState(true);
+  const [addTarget, setAddTarget]   = useState<{ title: string; imageRef: string; rating?: number; description?: string; lat?: number | null; lng?: number | null } | null>(null);
 
   // Header animations
   const headerFade  = useRef(new Animated.Value(0)).current;
@@ -274,7 +279,7 @@ export default function ExploreScreen() {
           </View>
         ) : filteredData.length > 0 ? (
           filteredData.map((city, i) => (
-            <CitySection key={city.city_id} city={city} sectionIndex={i} />
+            <CitySection key={city.city_id} city={city} sectionIndex={i} onAddToTrip={(attr) => setAddTarget({ title: attr.name, imageRef: attr.photo_ref ?? '', rating: attr.rating ?? undefined, description: attr.description ?? undefined, lat: attr.lat, lng: attr.lng })} />
           ))
         ) : (
           /* Empty state */
@@ -294,6 +299,11 @@ export default function ExploreScreen() {
           </View>
         )}
       </ScrollView>
+      <AddToTripModal
+        visible={addTarget !== null}
+        attraction={addTarget}
+        onClose={() => setAddTarget(null)}
+      />
     </SafeAreaView>
   );
 }

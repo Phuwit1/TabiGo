@@ -48,9 +48,12 @@ function PlaceChip({ item, selected, onPress }: {
     imgUri = `https://places.googleapis.com/v1/${item.photo_ref}/media?maxHeightPx=200&maxWidthPx=200&key=${GOOGLE_API_KEY}`;
   }
 
+  const [imgError, setImgError] = React.useState(false);
+  const resolvedUri = imgError ? fallback : imgUri;
+
   return (
     <TouchableOpacity style={[pc.chip, selected && pc.chipSelected]} onPress={onPress} activeOpacity={0.8}>
-      <Image source={{ uri: imgUri }} style={pc.img} resizeMode="cover" />
+      <Image source={{ uri: resolvedUri }} style={pc.img} resizeMode="cover" onError={() => setImgError(true)} />
       <View style={pc.scrim} />
       {item.rating != null && (
         <View style={pc.ratingBadge}>
@@ -163,6 +166,7 @@ export default function AICreateTrip() {
   // ── Place picker ─────────────────────────────────────────────────────────
   const [allAttractions, setAllAttractions] = useState<AttractionItem[]>([]);
   const [selectedPlaces, setSelectedPlaces] = useState<number[]>([]);
+  const [placeSearch, setPlaceSearch] = useState('');
 
   useEffect(() => {
     axios.get(`${API_URL}/attractions/`)
@@ -170,12 +174,14 @@ export default function AICreateTrip() {
       .catch(() => {});
   }, []);
 
-  const filteredAttractions = useMemo(() =>
-    allAttractions.filter(a => a.city_name && selectedCities.includes(a.city_name)),
-    [allAttractions, selectedCities],
-  );
+  const filteredAttractions = useMemo(() => {
+    const byCities = allAttractions.filter(a => a.city_name && selectedCities.includes(a.city_name));
+    if (!placeSearch.trim()) return byCities;
+    const q = placeSearch.trim().toLowerCase();
+    return byCities.filter(a => a.name.toLowerCase().includes(q));
+  }, [allAttractions, selectedCities, placeSearch]);
 
-  useEffect(() => { setSelectedPlaces([]); }, [selectedCities]);
+  useEffect(() => { setSelectedPlaces([]); setPlaceSearch(''); }, [selectedCities]);
 
   const togglePlace = (id: number) =>
     setSelectedPlaces(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
@@ -440,20 +446,46 @@ export default function AICreateTrip() {
         </View>
 
         {/* ── Preferred Places ── */}
-        {selectedCities.length > 0 && filteredAttractions.length > 0 && (
+        {selectedCities.length > 0 && (
           <View style={s.section}>
             <SectionHeader label="Preferred Places" />
             <Text style={s.placeHint}>Select places you'd like to visit (optional)</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
-              {filteredAttractions.map(item => (
-                <PlaceChip
-                  key={item.attraction_id}
-                  item={item}
-                  selected={selectedPlaces.includes(item.attraction_id)}
-                  onPress={() => togglePlace(item.attraction_id)}
-                />
-              ))}
-            </ScrollView>
+
+            {/* Search bar */}
+            <View style={s.placeSearchBar}>
+              <Ionicons name="search-outline" size={16} color={INK_60} />
+              <TextInput
+                style={s.placeSearchInput}
+                value={placeSearch}
+                onChangeText={setPlaceSearch}
+                placeholder="Search attractions..."
+                placeholderTextColor={INK_30}
+                selectionColor={BENI}
+              />
+              {placeSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setPlaceSearch('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={16} color={INK_60} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {filteredAttractions.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
+                {filteredAttractions.map(item => (
+                  <PlaceChip
+                    key={item.attraction_id}
+                    item={item}
+                    selected={selectedPlaces.includes(item.attraction_id)}
+                    onPress={() => togglePlace(item.attraction_id)}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={s.placeEmpty}>
+                <Ionicons name="search-outline" size={22} color={INK_60} />
+                <Text style={s.placeEmptyText}>No attractions found</Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -777,7 +809,22 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 }, elevation: 2,
   },
   toggleThumbActive: { alignSelf: 'flex-end' },
-  placeHint: { fontSize: 12, color: INK_60, marginBottom: 4 },
+  placeHint: { fontSize: 12, color: INK_60, marginBottom: 10 },
+  placeSearchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: WHITE, borderWidth: 1.2, borderColor: INK_12,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    marginBottom: 4,
+  },
+  placeSearchInput: {
+    flex: 1, fontSize: 13, fontFamily: 'NotoSansJP_400Regular',
+    color: SUMI, padding: 0,
+  },
+  placeEmpty: {
+    alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 24,
+  },
+  placeEmptyText: { fontSize: 12, color: INK_60 },
 });
 
 // ─── City modal styles (Premium UI) ───────────────────────────────────────────

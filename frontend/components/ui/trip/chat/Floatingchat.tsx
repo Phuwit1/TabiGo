@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ActivityIndicator, Dimensions, Platform,
@@ -83,7 +83,7 @@ function RouteSuggestion({ options }: { options: RouteOption[] }) {
               activeOpacity={0.75}
             >
               <Text style={[routeStyles.tabLabel, active && routeStyles.tabLabelActive]}>
-                {`Op.${index + 1}`}
+                {`Option ${index + 1}`}
               </Text>
               {active && <View style={routeStyles.tabDot} />}
             </TouchableOpacity>
@@ -144,6 +144,29 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const mapRef = useRef<MapView>(null);
 
+  // คำนวณ region ที่ครอบทั้ง 2 หมุด
+  const getRegion = () => {
+    if (!userCoords || nextActivity?.lat == null || nextActivity?.lng == null) {
+      return {
+        latitude: userCoords?.latitude ?? 13.7563,
+        longitude: userCoords?.longitude ?? 100.5018,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      };
+    }
+    const minLat = Math.min(Number(userCoords.latitude), Number(nextActivity.lat));
+    const maxLat = Math.max(Number(userCoords.latitude), Number(nextActivity.lat));
+    const minLng = Math.min(Number(userCoords.longitude), Number(nextActivity.lng));
+    const maxLng = Math.max(Number(userCoords.longitude), Number(nextActivity.lng));
+    const padding = 1.5;
+    return {
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLng + maxLng) / 2,
+      latitudeDelta: Math.max((maxLat - minLat) * padding, 0.01),
+      longitudeDelta: Math.max((maxLng - minLng) * padding, 0.01),
+    };
+  };
+
   const handleClose = () => {
     setIsOpen(false);
     setRouteInfo(null);
@@ -152,7 +175,6 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
     setNextActivity(null);
   };
 
-  // ฟังก์ชันหลักเมื่อกดปุ่ม
   const handlePress = async () => {
     if (isOpen) {
       handleClose();
@@ -160,18 +182,6 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
     }
     setIsOpen(true);
     await calculateRoute();
-  };
-
-  const fitMapToMarkers = () => {
-    if (mapRef.current && userCoords && nextActivity?.lat && nextActivity?.lng) {
-      mapRef.current.fitToCoordinates(
-        [
-          userCoords,
-          { latitude: nextActivity.lat, longitude: nextActivity.lng },
-        ],
-        { edgePadding: { top: 60, right: 40, bottom: 40, left: 40 }, animated: true }
-      );
-    }
   };
 
   const findNextLocation = (itinerary: ItineraryDay[]): ScheduleItem | null => {
@@ -238,16 +248,33 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
 
     try {
       // 1. ขอ Permission และหาตำแหน่งปัจจุบัน
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        throw new Error('Permission to access location was denied');
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        throw new Error('กรุณาเปิด Location Services บนอุปกรณ์ก่อนใช้งาน');
       }
 
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง กรุณาอนุญาตใน Settings');
+      }
+
+      let currentLocation;
+      try {
+        currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+      } catch {
+        // fallback: ใช้ตำแหน่งล่าสุดที่รู้จัก
+        const lastKnown = await Location.getLastKnownPositionAsync();
+        if (lastKnown) {
+          currentLocation = lastKnown;
+        } else {
+          throw new Error('ไม่สามารถระบุตำแหน่งได้ กรุณาเปิด GPS แล้วลองใหม่');
+        }
+      }
 
       const origin = `${currentLocation.coords.latitude},${currentLocation.coords.longitude}`;
+      console.log('[MAP] Got location:', origin);
       setUserCoords({
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
@@ -271,6 +298,7 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
         throw new Error('ไม่พบกิจกรรมถัดไปที่มีสถานที่ระบุไว้');
       }
 
+      console.log('[MAP] target found:', target.activity, target.lat, target.lng);
       setNextActivity(target);
 
       // 4. เรียก API Route Summarize
@@ -316,40 +344,44 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
         <View style={styles.modalRoot}>
           {/* === TOP 50%: MAP === */}
           <View style={styles.mapContainer}>
-            {userCoords ? (
-              <MapView
-                ref={mapRef}
-                provider={PROVIDER_GOOGLE}
-                style={styles.map}
-                initialRegion={{
-                  latitude: userCoords.latitude,
-                  longitude: userCoords.longitude,
-                  latitudeDelta: 0.05,
-                  longitudeDelta: 0.05,
-                }}
-                onMapReady={fitMapToMarkers}
-              >
+            <MapView
+              ref={mapRef}
+              provider={PROVIDER_GOOGLE}
+              style={styles.map}
+              region={getRegion()}
+              showsUserLocation
+              showsMyLocationButton
+            >
+              {userCoords && (
                 <Marker
-                  coordinate={userCoords}
+                  coordinate={{
+                    latitude: Number(userCoords.latitude),
+                    longitude: Number(userCoords.longitude),
+                  }}
                   title="ตำแหน่งของคุณ"
                   pinColor="blue"
                 />
-                {nextActivity?.lat && nextActivity?.lng && (
-                  <Marker
-                    coordinate={{ latitude: nextActivity.lat, longitude: nextActivity.lng }}
-                    title={nextActivity.specific_location_name || nextActivity.activity}
-                    pinColor="red"
-                  />
-                )}
-              </MapView>
-            ) : (
-              <View style={styles.mapPlaceholder}>
+              )}
+
+              {nextActivity?.lat != null && nextActivity?.lng != null && (
+                <Marker
+                  coordinate={{
+                    latitude: Number(nextActivity.lat),
+                    longitude: Number(nextActivity.lng),
+                  }}
+                  title={nextActivity.specific_location_name || nextActivity.activity}
+                  pinColor="red"
+                />
+              )}
+            </MapView>
+
+            {!userCoords && (
+              <View style={[styles.mapPlaceholder, StyleSheet.absoluteFillObject]}>
                 <ActivityIndicator size="large" color={BENI} />
                 <Text style={styles.mapPlaceholderText}>กำลังโหลดแผนที่...</Text>
               </View>
             )}
 
-            {/* Close button floating top-right over map */}
             <TouchableOpacity style={styles.modalCloseBtn} onPress={handleClose} activeOpacity={0.7}>
               <Ionicons name="close" size={22} color={WASHI} />
             </TouchableOpacity>

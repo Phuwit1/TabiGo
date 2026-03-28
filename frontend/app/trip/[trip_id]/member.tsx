@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Pressable,
   ActivityIndicator, Alert, SafeAreaView, RefreshControl, Modal, Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -153,6 +154,7 @@ export default function MemberScreen() {
   };
 
   const isOwner = tripGroup?.owner?.email === currentUserEmail;
+  const insets = useSafeAreaInsets();
 
   // ─── Member card ────────────────────────────────────────────────────────────
   const renderItem = ({ item, index }: { item: any; index: number }) => {
@@ -313,7 +315,7 @@ export default function MemberScreen() {
 
       {/* ── Leave group button (non-owner only) ── */}
       {!isOwner && (
-        <View style={s.footer}>
+        <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 65) }]}>
           <TouchableOpacity style={s.leaveBtn} onPress={handleLeaveGroup} activeOpacity={0.85}>
             <Ionicons name="log-out-outline" size={16} color={BENI} />
             <Text style={s.leaveBtnText}>Leave Trip</Text>

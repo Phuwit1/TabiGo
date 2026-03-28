@@ -19,6 +19,7 @@ interface SearchCardProps {
   photo_ref: string | null;
   rating?: number | null;
   onPress?: () => void;
+  onAddToTrip?: () => void;
   index?: number;
   style?: object;
 }
@@ -28,6 +29,7 @@ export default function SearchCard({
   photo_ref,
   rating,
   onPress,
+  onAddToTrip,
   index = 0,
   style,
 }: SearchCardProps) {
@@ -81,7 +83,7 @@ export default function SearchCard({
         { opacity: fadeAnim, transform: [{ translateY: slideAnim }, { scale: scaleAnim }] },
       ]}
     >
-      <TouchableOpacity onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} activeOpacity={1}>
+      <TouchableOpacity onPress={onAddToTrip ?? onPress} onPressIn={onPressIn} onPressOut={onPressOut} activeOpacity={1}>
 
         {/* Image zone */}
         <View style={s.imgWrap}>

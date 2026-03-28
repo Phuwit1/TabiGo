@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Image, Pressable, StatusBar, Alert } from 'react-native';
+import { View, Text, StyleSheet, Image, Pressable, StatusBar, Alert, Modal, TextInput, FlatList, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import CurrentCard from '@/components/ui/home/CurrentCard';
@@ -6,7 +6,7 @@ import InfoCard from '@/components/ui/home/InfoCard';
 import PastTripCard, { PastTrip } from '@/components/ui/home/PastTripCard';
 import FlightSearch from '@/components/ui/home/FlightSearch';
 import AddToTripModal from '@/components/ui/home/AddToTripModal';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useFocusEffect } from '@react-navigation/native';
@@ -57,10 +57,16 @@ const SectionHeader = ({
   title,
   onSeeMore,
   onEdit,
+  onFilter,
+  filterActive,
+  filterLabel,
 }: {
   title: string;
   onSeeMore?: () => void;
   onEdit?: () => void;
+  onFilter?: () => void;
+  filterActive?: boolean;
+  filterLabel?: string;
 }) => (
   <View style={sh.row}>
     <View style={sh.left}>
@@ -72,6 +78,18 @@ const SectionHeader = ({
         <TouchableOpacity style={sh.editBtn} onPress={onEdit}>
           <Ionicons name="pencil" size={11} color={BENI} />
           <Text style={sh.moreText}>Edit</Text>
+        </TouchableOpacity>
+      )}
+      {onFilter && (
+        <TouchableOpacity
+          style={[sh.filterBtn, filterActive && sh.filterBtnActive]}
+          onPress={() => { console.log('[Filter] pressed'); onFilter(); }}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="filter-outline" size={12} color={filterActive ? WHITE : KINCHA} />
+          <Text style={[sh.moreText, filterActive && sh.filterBtnText]}>
+            {filterLabel ?? 'Filter'}
+          </Text>
         </TouchableOpacity>
       )}
       {onSeeMore && (
@@ -149,6 +167,24 @@ const sh = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: KINCHA,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: 'transparent',
+  },
+  filterBtnActive: {
+    backgroundColor: KINCHA,
+    borderColor: KINCHA,
+  },
+  filterBtnText: {
+    color: WHITE,
+  },
 });
 
 
@@ -178,6 +214,11 @@ export default function Home() {
   const [prefLength, setPrefLength]     = useState<string>('');
   const [savingPref, setSavingPref]     = useState(false);
   const [endedTrips, setEndedTrips]     = useState<PastTrip[]>([]);
+  const [allCities, setAllCities]         = useState<string[]>([]);
+  const [loadingCities, setLoadingCities] = useState(false);
+  const [selectedCities, setSelectedCities] = useState<Set<string>>(new Set());
+  const [showCityModal, setShowCityModal] = useState(false);
+  const [citySearch, setCitySearch]       = useState('');
   const router = useRouter();
   const { top } = useSafeAreaInsets();
 
@@ -323,10 +364,39 @@ export default function Home() {
     }
   };
 
+  const fetchCities = async () => {
+    setLoadingCities(true);
+    try {
+      const res = await axios.get(`${API_URL}/cities`);
+      const raw = res.data;
+      const items: { id?: number; name: string }[] = Array.isArray(raw)
+        ? raw
+        : (raw?.items ?? []);
+      if (items.length > 0) {
+        setAllCities(items.map(c => c.name).filter(Boolean));
+        return;
+      }
+      console.warn('[Cities] items empty, falling back');
+    } catch (e: any) {
+      console.warn('[Cities] API failed:', e?.message, e?.response?.status, e?.response?.data);
+    } finally {
+      setLoadingCities(false);
+    }
+    // fallback: derive from already-loaded data
+    const fromAttractions = [...attractions, ...restaurants, ...forYou]
+      .map(a => a.city_name)
+      .filter(Boolean) as string[];
+    const fromTrips = endedTrips.map(t => t.city).filter(Boolean) as string[];
+    const merged = [...new Set([...fromAttractions, ...fromTrips])].sort();
+    console.log('[Cities] fallback merged:', merged);
+    if (merged.length > 0) setAllCities(merged);
+  };
+
   useFocusEffect(
     React.useCallback(() => {
       fetchAttractions();
       fetchEndedTrips();
+      fetchCities();
     }, [])
   );
 
@@ -465,23 +535,136 @@ export default function Home() {
           <WashiDivider />
 
           {/* ── Trip Guides ── */}
-          <SectionHeader title="Trip Guides" />
-          {endedTrips.length === 0 ? (
-            <View style={s.guidesEmpty}>
-              <Ionicons name="map-outline" size={28} color={INK_60} style={{ opacity: 0.4 }} />
-              <Text style={s.guidesEmptyText}>No completed trips yet</Text>
+          <SectionHeader
+            title="Trip Guides"
+            onFilter={() => { setShowCityModal(true); fetchCities(); }}
+            filterActive={selectedCities.size > 0}
+            filterLabel={selectedCities.size === 0 ? 'Filter' : `${selectedCities.size} เมือง`}
+          />
+
+          {/* Trip cards or empty state */}
+          {(() => {
+            const filtered = selectedCities.size === 0
+              ? endedTrips
+              : endedTrips.filter(t => selectedCities.has(t.city || 'Japan'));
+            return filtered.length === 0 ? (
+              <View style={s.guidesEmpty}>
+                <Ionicons name="map-outline" size={28} color={INK_60} style={{ opacity: 0.4 }} />
+                <Text style={s.guidesEmptyText}>ไม่มีแพลน guide ตอนนี้</Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.hScroll}
+              >
+                {filtered.map((trip, i) => (
+                  <PastTripCard key={trip.plan_id} trip={trip} index={i} />
+                ))}
+              </ScrollView>
+            );
+          })()}
+
+          {/* City filter modal */}
+          <Modal
+            visible={showCityModal}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setShowCityModal(false)}
+          >
+            <View style={s.cityModalBackdrop}>
+              <View style={s.cityModalCard}>
+                <View style={s.cityModalHandle} />
+
+                {/* Header */}
+                <View style={s.cityModalHeader}>
+                  <Text style={s.cityModalTitle}>Filter by City</Text>
+                  <TouchableOpacity onPress={() => setShowCityModal(false)} activeOpacity={0.75}>
+                    <Ionicons name="close" size={20} color={SUMI} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Search */}
+                <View style={s.cityModalSearchWrap}>
+                  <Ionicons name="search-outline" size={16} color={INK_60} style={{ marginRight: 8 }} />
+                  <TextInput
+                    style={s.cityModalSearchInput}
+                    value={citySearch}
+                    onChangeText={setCitySearch}
+                    placeholder="Search city..."
+                    placeholderTextColor={INK_60}
+                    selectionColor={BENI}
+                  />
+                  {citySearch.length > 0 && (
+                    <Pressable onPress={() => setCitySearch('')} hitSlop={8}>
+                      <Ionicons name="close-circle" size={16} color={INK_60} />
+                    </Pressable>
+                  )}
+                </View>
+
+                {/* City list */}
+                {loadingCities ? (
+                  <ActivityIndicator color={BENI} style={{ marginVertical: 40 }} />
+                ) : (
+                  <FlatList
+                    data={allCities.filter(c => c.toLowerCase().includes(citySearch.toLowerCase()))}
+                    keyExtractor={item => item}
+                    keyboardShouldPersistTaps="handled"
+                    style={{ maxHeight: 380 }}
+                    ListEmptyComponent={<Text style={s.cityModalEmpty}>No cities found</Text>}
+                    renderItem={({ item: city }) => {
+                      const checked = selectedCities.has(city);
+                      const tripCount = endedTrips.filter(t => t.city === city).length;
+                      return (
+                        <Pressable
+                          onPress={() => setSelectedCities(prev => {
+                            const n = new Set(prev);
+                            if (n.has(city)) n.delete(city); else n.add(city);
+                            return n;
+                          })}
+                          style={[s.cityModalRow, checked && s.cityModalRowChecked]}
+                        >
+                          <View style={[s.cityModalCheckbox, checked && s.cityModalCheckboxChecked]}>
+                            {checked && <Ionicons name="checkmark" size={14} color={WHITE} />}
+                          </View>
+                          <Text style={[s.cityModalCityName, checked && s.cityModalCityNameChecked]}>
+                            {city}
+                          </Text>
+                          {tripCount > 0 && (
+                            <View style={s.cityModalTripBadge}>
+                              <Text style={s.cityModalTripBadgeText}>{tripCount} trips</Text>
+                            </View>
+                          )}
+                        </Pressable>
+                      );
+                    }}
+                  />
+                )}
+
+                {/* Footer */}
+                <View style={s.cityModalFooter}>
+                  {selectedCities.size > 0 && (
+                    <TouchableOpacity
+                      onPress={() => { setSelectedCities(new Set()); setCitySearch(''); }}
+                      style={s.cityModalClearBtn}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={s.cityModalClearText}>Clear</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={s.cityModalConfirmBtn}
+                    onPress={() => { setCitySearch(''); setShowCityModal(false); }}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={s.cityModalConfirmText}>
+                      {selectedCities.size === 0 ? 'Show All' : `Show ${selectedCities.size} ${selectedCities.size === 1 ? 'city' : 'cities'}`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={s.hScroll}
-            >
-              {endedTrips.map((trip, i) => (
-                <PastTripCard key={trip.plan_id} trip={trip} index={i} />
-              ))}
-            </ScrollView>
-          )}
+          </Modal>
           <View style={{ height: 32 }} />
         </View>
 
@@ -658,5 +841,180 @@ const s = StyleSheet.create({
     paddingBottom: 8,
     gap: 10,
     alignItems: 'flex-start',
+  },
+  // City filter button
+  cityFilterRow: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  cityFilterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: KINCHA,
+    backgroundColor: 'transparent',
+  },
+  cityFilterBtnActive: {
+    backgroundColor: KINCHA,
+    borderColor: KINCHA,
+  },
+  cityFilterBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: KINCHA,
+  },
+  cityFilterBtnTextActive: {
+    color: WHITE,
+  },
+
+  // ── City filter modal ──────────────────────────────────────────────────────
+  cityModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(28,20,16,0.6)',
+    justifyContent: 'flex-end',
+  },
+  cityModalCard: {
+    backgroundColor: WASHI,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 24,
+  },
+  cityModalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(28,20,16,0.15)',
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  cityModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+  },
+  cityModalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: SUMI,
+    letterSpacing: 0.3,
+  },
+  cityModalSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    marginHorizontal: 24,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: WASHI_DARK,
+  },
+  cityModalSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: SUMI,
+    paddingVertical: 0,
+  },
+  cityModalEmpty: {
+    textAlign: 'center',
+    paddingVertical: 40,
+    color: INK_60,
+    fontSize: 14,
+  },
+  cityModalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(28,20,16,0.08)',
+  },
+  cityModalRowChecked: {
+    backgroundColor: 'rgba(184,150,62,0.06)',
+  },
+  cityModalCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(28,20,16,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: WHITE,
+  },
+  cityModalCheckboxChecked: {
+    backgroundColor: BENI,
+    borderColor: BENI,
+  },
+  cityModalCityName: {
+    flex: 1,
+    fontSize: 15,
+    color: SUMI,
+  },
+  cityModalCityNameChecked: {
+    fontWeight: '700',
+    color: BENI,
+  },
+  cityModalTripBadge: {
+    backgroundColor: 'rgba(184,150,62,0.1)',
+    borderWidth: 0.8,
+    borderColor: 'rgba(184,150,62,0.35)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  cityModalTripBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: KINCHA,
+  },
+  cityModalFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    gap: 12,
+  },
+  cityModalClearBtn: {
+    paddingVertical: 11,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: KINCHA,
+    alignItems: 'center',
+  },
+  cityModalClearText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: KINCHA,
+  },
+  cityModalConfirmBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 20,
+    backgroundColor: SUMI,
+    alignItems: 'center',
+    shadowColor: SUMI,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  cityModalConfirmText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: WHITE,
+    letterSpacing: 0.5,
   },
 });
