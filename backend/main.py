@@ -43,21 +43,11 @@ app = FastAPI(lifespan=lifespan)
 
 
 if __name__ == "__main__":
-    # สั่งรัน get_location.py แบบ Background process
-    # sys.executable คือตัวระบุว่าให้ใช้ python ตัวเดียวกับที่รัน main.py
-    process = subprocess.Popen([sys.executable, "get_location.py"])
-    
     try:
-        print("Starting get_location.py...")
-        # รัน Server
-        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+        print("Starting server with socket_app...")
+        uvicorn.run("main:socket_app", host="0.0.0.0", port=8000, reload=True)
     except KeyboardInterrupt:
-        # (Optional) จัดการตอนกด Ctrl+C เพื่อปิด get_location.py ด้วยถ้าจำเป็น
         pass
-    finally:
-        # สั่งปิด get_location.py เมื่อ main.py หยุดทำงาน
-        process.terminate()
-        print("Stopped get_location.py")
 # class for request model
 
 
@@ -76,7 +66,7 @@ async def jwt_middleware(request: Request, call_next):
     # Routes that allow optional auth (decode token if present, but don't require it)
     OPTIONAL_AUTH = {"/attractions/"}
     # Routes that require no auth at all
-    PUBLIC = {"/login", "/register", "/refresh-token", "/google-login", "/cities", "/explore-cities", "/trip_plan/ended"}
+    PUBLIC = {"/login", "/register", "/refresh-token", "/google-login", "/cities", "/explore-cities", "/trip_plan/ended", "/socket.io"}
 
     request.state.email = None
 
