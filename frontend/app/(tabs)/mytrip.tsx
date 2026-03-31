@@ -192,6 +192,7 @@ export default function TripListScreen() {
       ]);
       if (userRes.status === 'fulfilled') setCurrentUser(userRes.value.data);
       if (tripsRes.status === 'rejected') throw tripsRes.reason;
+      setError('');
       setTrips(Array.isArray(tripsRes.value.data) ? tripsRes.value.data : []);
     } catch (err: any) {
       try {

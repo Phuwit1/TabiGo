@@ -280,7 +280,6 @@ export default function Hometrip() {
   const [budgetLoading, setBudgetLoading] = useState(false);
 
   const fetchBudget = useCallback(async () => {
-    if (budgetData !== null) return;
     setBudgetLoading(true);
     try {
       const token = await AsyncStorage.getItem('access_token');
@@ -291,11 +290,11 @@ export default function Hometrip() {
       setExpenses(res.data?.expenses || []);
     } catch { /* ignore */ }
     finally { setBudgetLoading(false); }
-  }, [trip_id, budgetData]);
+  }, [trip_id]);
 
   useEffect(() => {
     if (activeTab === 'budget') fetchBudget();
-  }, [activeTab]);
+  }, [activeTab, fetchBudget]);
 
   const dailyRef = useRef<DailyPlanTabsHandle>(null);
   const API_BASE = useMemo(() => `${API_URL}`, []);
@@ -315,12 +314,11 @@ export default function Hometrip() {
       setTrip(tripRes.data);
       setCurrentUserId(userRes.data.customer_id ?? null);
       setRefreshKey(Date.now());
-      // Reset budget so it re-fetches on next tab visit
-      setBudgetData(null);
-      setExpenses([]);
+      // Always re-fetch budget
+      await fetchBudget();
     } catch { /* ignore */ }
     finally { setRefreshing(false); }
-  }, [trip_id]);
+  }, [trip_id, fetchBudget]);
 
   useFocusEffect(
     useCallback(() => {
@@ -366,6 +364,13 @@ export default function Hometrip() {
       };
       if (trip_id) fetchTrip();
     }, [trip_id])
+  );
+
+  // Re-fetch budget whenever screen comes back into focus while on budget tab
+  useFocusEffect(
+    useCallback(() => {
+      if (activeTab === 'budget') fetchBudget();
+    }, [activeTab, fetchBudget])
   );
 
   // ── Loading state ─────────────────────────────────────────────────────────

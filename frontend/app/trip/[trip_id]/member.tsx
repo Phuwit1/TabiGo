@@ -43,9 +43,7 @@ export default function MemberScreen() {
   const [kickTarget, setKickTarget]         = useState<{ id: number; name: string } | null>(null);
   const [kickLoading, setKickLoading]       = useState(false);
 
-  useFocusEffect(useCallback(() => { fetchData(); }, [trip_id]));
-
-  const fetchData = async (isRefresh = false) => {
+  const fetchData = useCallback(async (isRefresh = false) => {
     try {
       if (!isRefresh) setLoading(true);
       const token = await AsyncStorage.getItem('access_token');
@@ -72,7 +70,9 @@ export default function MemberScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [trip_id]);
+
+  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
   const handleCopyCode = async () => {
     if (tripGroup?.uniqueCode) {
