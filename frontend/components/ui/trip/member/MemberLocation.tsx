@@ -248,7 +248,7 @@ export default function MemberLocationMap({ groupCode, userName, onClose }: Prop
         // Get initial position
         try {
             const current = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Balanced,
+                accuracy: Location.Accuracy.High,
             });
             const { latitude, longitude } = current.coords;
             setMyLocation({ latitude, longitude });
