@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactElement } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, RefreshControl } from 'react-native';
 import Animated, {
   interpolate,
   useAnimatedRef,
@@ -17,12 +17,16 @@ type Props = PropsWithChildren<{
   headerImage: ReactElement;
   headerBackgroundColor?: { dark: string; light: string };
   headerHeight?: number;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }>;
 
 export default function TripParallaxScrollView({
   children,
   headerHeight = 300,
   headerImage,
+  refreshing,
+  onRefresh,
 }: Props) {
   const scrollRef    = useAnimatedRef<Animated.ScrollView>();
   const scrollOffset = useScrollViewOffset(scrollRef);
@@ -55,6 +59,11 @@ export default function TripParallaxScrollView({
         scrollIndicatorInsets={{ bottom }}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: bottom }}
+        refreshControl={
+          onRefresh != null ? (
+            <RefreshControl refreshing={refreshing ?? false} onRefresh={onRefresh} />
+          ) : undefined
+        }
       >
         {/* ── Parallax header ── */}
         <Animated.View

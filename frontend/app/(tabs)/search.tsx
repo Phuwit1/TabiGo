@@ -284,7 +284,6 @@ export default function ExploreScreen() {
         ) : (
           /* Empty state */
           <View style={s.emptyWrap}>
-            <Text style={s.emptyKanji}>空</Text>
             <View style={s.emptyIconRing}>
               <Ionicons name="search" size={34} color={BENI} />
             </View>

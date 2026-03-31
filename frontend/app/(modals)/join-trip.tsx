@@ -59,7 +59,7 @@ export default function JoinTripModal({ isVisible, onClose }: { isVisible?: bool
       setTripDetails(response.data);
       setStep('preview'); 
     } catch (error) {
-      showCustomAlert("Error", "ไม่พบกลุ่ม หรือ รหัสไม่ถูกต้อง", false, () => setCode(''));
+      showCustomAlert("Error", "Group not found or invalid code.", false, () => setCode(''));
     } finally {
       setLoading(false);
     }
@@ -75,12 +75,12 @@ export default function JoinTripModal({ isVisible, onClose }: { isVisible?: bool
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      showCustomAlert("Success!", "เข้าร่วมกลุ่มสำเร็จ", true, () => {
+      showCustomAlert("Success!", "Joined the group successfully.", true, () => {
         handleClose(); 
         router.replace('/(tabs)/mytrip'); 
       });
     } catch (error) {
-      showCustomAlert("Error", "ไม่สามารถเข้าร่วมกลุ่มได้", false);
+      showCustomAlert("Error", "Unable to join the group.", false);
     } finally {
       setLoading(false);
     }

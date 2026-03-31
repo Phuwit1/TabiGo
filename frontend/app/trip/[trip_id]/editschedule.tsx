@@ -4,6 +4,7 @@ import {
   Alert, ActivityIndicator, StyleSheet,
   Modal, SafeAreaView, Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -26,6 +27,7 @@ export default function EditSchedule() {
   const { trip_id, dayIndex } = useLocalSearchParams();
   const router = useRouter();
   const planId = trip_id;
+  const insets = useSafeAreaInsets();
 
   const [loading, setLoading]                   = useState(true);
   const [selectedDayIndex, setSelectedDayIndex] = useState(dayIndex ? parseInt(dayIndex as string) : 0);
@@ -518,7 +520,7 @@ export default function EditSchedule() {
         </View>
 
         {/* ── Save footer / View Only notice ── */}
-        <View style={s.footer}>
+        <View style={[s.footer, { paddingBottom: Math.max(20, insets.bottom + 64) }]}>
           {canEdit ? (
             <TouchableOpacity style={s.saveBtn} onPress={confirmPlan} disabled={saving} activeOpacity={0.85}>
               <Ionicons name="checkmark-circle-outline" size={16} color={WASHI} />

@@ -104,30 +104,32 @@ export default function InfoCard({ title, imageRef, rating, description, address
         <View style={s.info}>
           <View style={s.stripe} />
           <View style={s.infoContent}>
-            <Text style={s.title} numberOfLines={1}>{title || 'Unknown Place'}</Text>
+            <View style={s.topSection}>
+              <Text style={s.title} numberOfLines={1}>{title || 'Unknown Place'}</Text>
 
-            {/* Star row */}
-            {rating != null && (
-              <View style={s.starRow}>
-                {[1, 2, 3, 4, 5].map(n => {
-                  const filled = n <= fullStars;
-                  const half   = !filled && n === fullStars + 1 && hasHalf;
-                  return (
-                    <Ionicons
-                      key={n}
-                      name={filled ? 'star' : half ? 'star-half' : 'star-outline'}
-                      size={10}
-                      color={filled || half ? KINCHA_LIGHT : INK_20}
-                    />
-                  );
-                })}
-              </View>
-            )}
+              {/* Star row */}
+              {rating != null && (
+                <View style={s.starRow}>
+                  {[1, 2, 3, 4, 5].map(n => {
+                    const filled = n <= fullStars;
+                    const half   = !filled && n === fullStars + 1 && hasHalf;
+                    return (
+                      <Ionicons
+                        key={n}
+                        name={filled ? 'star' : half ? 'star-half' : 'star-outline'}
+                        size={10}
+                        color={filled || half ? KINCHA_LIGHT : INK_20}
+                      />
+                    );
+                  })}
+                </View>
+              )}
 
-            {/* desc — always 2 lines to keep height consistent */}
-            <Text style={s.desc} numberOfLines={2}>{safeDesc}</Text>
+              {/* desc — fixed height, always 2 lines */}
+              <Text style={s.desc} numberOfLines={2}>{safeDesc}</Text>
+            </View>
 
-            {/* Read more — always rendered, กด → modal */}
+            {/* Read more — always at bottom */}
             <TouchableOpacity onPress={() => setShowDesc(true)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
               <Text style={s.readMore}>Read more ›</Text>
             </TouchableOpacity>
@@ -148,6 +150,7 @@ export default function InfoCard({ title, imageRef, rating, description, address
               onError={() => setImgError(true)}
             />
             <View style={d.body}>
+              {/* Fixed header — title + stars + divider */}
               <Text style={d.title}>{title || 'Unknown Place'}</Text>
               {rating != null && (
                 <View style={d.starRow}>
@@ -167,27 +170,32 @@ export default function InfoCard({ title, imageRef, rating, description, address
                 <View style={d.divLine} />
               </View>
 
-              {/* City + Address */}
-              {(city || address) && (
-                <View style={d.locationWrap}>
-                  {city && (
-                    <View style={d.locationRow}>
-                      <Ionicons name="business-outline" size={12} color={KINCHA} />
-                      <Text style={d.locationCity}>{city}</Text>
-                    </View>
-                  )}
-                  {address && (
-                    <View style={d.locationRow}>
-                      <Ionicons name="location-outline" size={12} color={INK_60} />
-                      <Text style={d.locationAddr}>{address}</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Scrollable content — address + description */}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                style={d.scrollArea}
+                contentContainerStyle={d.scrollContent}
+              >
+                {(city || address) && (
+                  <View style={d.locationWrap}>
+                    {city && (
+                      <View style={d.locationRow}>
+                        <Ionicons name="business-outline" size={12} color={KINCHA} />
+                        <Text style={d.locationCity}>{city}</Text>
+                      </View>
+                    )}
+                    {address && (
+                      <View style={d.locationRow}>
+                        <Ionicons name="location-outline" size={12} color={INK_60} />
+                        <Text style={d.locationAddr}>{address}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
                 <Text style={d.desc}>{safeDesc}</Text>
               </ScrollView>
+
+              {/* Fixed footer — Add to Trip button */}
               {onAddToTrip && (
                 <TouchableOpacity
                   style={d.addBtn}
@@ -287,7 +295,8 @@ const s = StyleSheet.create({
     marginRight: 8,
     alignSelf: 'stretch',
   },
-  infoContent: { flex: 1, gap: 3 },
+  infoContent: { flex: 1, justifyContent: 'space-between' },
+  topSection: { gap: 3 },
   title: {
     fontSize: 12,
     fontFamily: 'NotoSansJP_700Bold',
@@ -304,13 +313,13 @@ const s = StyleSheet.create({
     fontFamily: 'NotoSansJP_400Regular',
     color: INK_60,
     lineHeight: 15,
-    marginTop: 1,
+    height: 30,
+    overflow: 'hidden',
   },
   readMore: {
     fontSize: 9,
     color: BENI,
     fontFamily: 'NotoSansJP_700Bold',
-    marginTop: 'auto' as any,  // ← ดันลงล่างสุดของ info section
     letterSpacing: 0.3,
   },
 });
@@ -326,6 +335,7 @@ const d = StyleSheet.create({
   },
   card: {
     width: '100%', maxWidth: 340,
+    maxHeight: '80%',
     backgroundColor: WASHI,
     borderRadius: 16,
     overflow: 'hidden',
@@ -337,7 +347,9 @@ const d = StyleSheet.create({
   },
   topBar: { height: 3, backgroundColor: BENI },
   thumb: { width: '100%', height: 140, backgroundColor: WASHI_DARK },
-  body: { padding: 16, maxHeight: 260 },
+  body: { padding: 16 },
+  scrollArea: { maxHeight: 200 },
+  scrollContent: { paddingBottom: 4 },
   title: {
     fontSize: 15,
     fontFamily: 'ShipporiMincho_700Bold',

@@ -4,6 +4,7 @@ import {
   Alert, ActivityIndicator, StyleSheet,
   Modal, SafeAreaView, FlatList,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -24,6 +25,7 @@ type City = { id: number; name: string };
 export default function TripDetail() {
   const { planId, cities: citiesParam } = useLocalSearchParams();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [loading, setLoading]               = useState(true);
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
@@ -301,7 +303,7 @@ export default function TripDetail() {
       </View>
 
       {/* ── Footer confirm button ── */}
-      <View style={s.footer}>
+      <View style={[s.footer, { paddingBottom: Math.max(24, insets.bottom + 64) }]}>
         <TouchableOpacity style={s.confirmBtn} onPress={confirmPlan} disabled={saving} activeOpacity={0.85}>
           <Ionicons name="checkmark-circle-outline" size={16} color={WASHI} />
           <Text style={s.confirmBtnText}>Confirm Trip</Text>

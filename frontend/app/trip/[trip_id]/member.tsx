@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Pressable,
-  ActivityIndicator, Alert, SafeAreaView, RefreshControl, Modal, Image,
+  ActivityIndicator, Alert, SafeAreaView, RefreshControl, Modal, Image, Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -76,9 +76,20 @@ export default function MemberScreen() {
 
   const handleCopyCode = async () => {
     if (tripGroup?.uniqueCode) {
-      await Clipboard.setStringAsync(tripGroup.uniqueCode);
-      Alert.alert('Copied!', 'Invite code copied to clipboard');
+      const link = `myapp://join-trip?code=${tripGroup.uniqueCode}`;
+      await Clipboard.setStringAsync(link);
+      Alert.alert('Copied!', 'Invite link copied to clipboard');
     }
+  };
+
+  const handleShare = async () => {
+    if (!tripGroup?.uniqueCode) return;
+    const code = tripGroup.uniqueCode;
+    const link = `myapp://join-trip?code=${code}`;
+    await Share.share({
+      message: `Join my trip on TabiGo!\nCode: ${code}\nOpen app: ${link}`,
+      title: 'Join my trip',
+    });
   };
 
   const handleRemoveMember = (memberId: number, name: string) => {
@@ -278,10 +289,16 @@ export default function MemberScreen() {
                   <Text style={s.inviteLabel}>INVITE CODE</Text>
                   <Text style={s.inviteCode}>{tripGroup.uniqueCode}</Text>
                 </View>
-                <TouchableOpacity style={s.copyBtn} onPress={handleCopyCode} activeOpacity={0.85}>
-                  <Ionicons name="copy-outline" size={14} color={WASHI} />
-                  <Text style={s.copyBtnText}>Copy</Text>
-                </TouchableOpacity>
+                <View style={s.inviteActions}>
+                  <TouchableOpacity style={s.copyBtn} onPress={handleCopyCode} activeOpacity={0.85}>
+                    <Ionicons name="copy-outline" size={14} color={WASHI} />
+                    <Text style={s.copyBtnText}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.shareBtn} onPress={handleShare} activeOpacity={0.85}>
+                    <Ionicons name="share-social-outline" size={14} color={KINCHA} />
+                    <Text style={s.shareBtnText}>Share</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -502,11 +519,18 @@ const s = StyleSheet.create({
   inviteLeft: {},
   inviteLabel: { fontSize: 9, fontFamily: 'NotoSansJP_700Bold', color: INK_30, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 3 },
   inviteCode: { fontSize: 18, fontFamily: 'NotoSansJP_700Bold', color: SUMI, letterSpacing: 3 },
+  inviteActions: { flexDirection: 'row', gap: 8 },
   copyBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: BENI, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99,
   },
   copyBtnText: { fontSize: 11, fontFamily: 'NotoSansJP_700Bold', color: WASHI },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(184,150,62,0.12)', borderWidth: 1, borderColor: KINCHA,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99,
+  },
+  shareBtnText: { fontSize: 11, fontFamily: 'NotoSansJP_700Bold', color: KINCHA },
 
   // Map button
   mapBtn: {

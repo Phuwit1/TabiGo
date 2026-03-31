@@ -5,6 +5,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { API_URL } from '@/api.js'
 
+// ─── Japanese Palette ──────────────────────────────────────────────────────────
+const BENI         = '#C0392B';
+const KINCHA       = '#B8963E';
+const KINCHA_LIGHT = '#D4AF55';
+const SUMI         = '#1C1410';
+const WASHI        = '#FAF5EC';
+const WASHI_DARK   = '#EDE5D8';
+const INK_60       = 'rgba(28,20,16,0.6)';
+const INK_20       = 'rgba(28,20,16,0.12)';
+
 // 1. Interfaces match the JSON structure 
 interface FlightTime {
   utc?: string;
@@ -143,10 +153,10 @@ export default function FlightSearch({ visible, onClose }: FlightSearchProps) {
           <Text style={styles.flightNumText}>{item.flight_number}</Text>
         </View>
         <View style={[styles.statusBadge,
-        { backgroundColor: item.status === 'Arrived' ? '#E8F5E9' : '#FFF3E0' }
+        { backgroundColor: item.status === 'Arrived' ? 'rgba(184,150,62,0.15)' : 'rgba(192,57,43,0.1)' }
         ]}>
           <Text style={[styles.statusText,
-          { color: item.status === 'Arrived' ? '#2E7D32' : '#EF6C00' }
+          { color: item.status === 'Arrived' ? KINCHA : BENI }
           ]}>
             {item.status}
           </Text>
@@ -166,7 +176,7 @@ export default function FlightSearch({ visible, onClose }: FlightSearchProps) {
 
         {/* Arrow */}
         <View style={styles.planeIconBlock}>
-          <Ionicons name="airplane" size={20} color="#007AFF" />
+          <Ionicons name="airplane" size={20} color={KINCHA_LIGHT} />
           <Text style={styles.durationText}>→</Text>
         </View>
 
@@ -238,9 +248,9 @@ export default function FlightSearch({ visible, onClose }: FlightSearchProps) {
 
           {/* Header Modal */}
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Flight Search ✈️</Text>
+            <Text style={styles.modalTitle}>Flight Search</Text>
             <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color="#333" />
+              <Ionicons name="close" size={24} color={SUMI} />
             </TouchableOpacity>
           </View>
 
@@ -248,7 +258,7 @@ export default function FlightSearch({ visible, onClose }: FlightSearchProps) {
           <View style={styles.formGroup}>
             <Text style={styles.label}>Flight Number (e.g. SQ719)</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="airplane-outline" size={20} color="#666" style={{ marginRight: 8 }} />
+              <Ionicons name="airplane-outline" size={20} color={KINCHA} style={{ marginRight: 8 }} />
               <TextInput
                 style={styles.input}
                 placeholder="Search..."
@@ -303,19 +313,21 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(28,20,16,0.55)',
   },
   modalView: {
     width: '90%',
     maxHeight: '80%',
-    backgroundColor: 'white',
-    borderRadius: 20,
+    backgroundColor: WASHI,
+    borderRadius: 16,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    borderTopWidth: 3,
+    borderTopColor: BENI,
+    shadowColor: SUMI,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -324,74 +336,78 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: SUMI,
+    letterSpacing: 0.5,
   },
   formGroup: {
     marginBottom: 10,
   },
   label: {
     marginBottom: 5,
-    color: '#666',
+    color: INK_60,
     fontWeight: '500',
+    fontSize: 13,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
+    borderColor: WASHI_DARK,
+    borderRadius: 8,
     paddingHorizontal: 10,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: WASHI_DARK,
     height: 45,
   },
   input: {
     flex: 1,
     height: '100%',
+    color: SUMI,
   },
   searchBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: BENI,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 8,
     alignItems: 'center',
     marginBottom: 10,
-    shadowColor: '#007AFF',
+    shadowColor: BENI,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 3,
   },
   searchBtnText: {
-    color: 'white',
+    color: WASHI,
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 15,
+    letterSpacing: 0.5,
   },
-  // Result Styles
   resultSection: {
     marginTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: WASHI_DARK,
     paddingTop: 10,
     alignItems: 'center',
   },
   resultTitle: {
     alignSelf: 'flex-start',
     fontWeight: 'bold',
-    color: '#333',
+    color: SUMI,
     marginBottom: 5,
+    fontSize: 13,
   },
   cardContainer: {
     width: width * 0.8,
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: WASHI,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: WASHI_DARK,
     padding: 15,
     marginHorizontal: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowColor: SUMI,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
     elevation: 2,
   },
   cardHeader: {
@@ -402,83 +418,81 @@ const styles = StyleSheet.create({
   },
   airlineText: {
     fontSize: 12,
-    color: '#666',
+    color: INK_60,
   },
   flightNumText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#000',
+    color: SUMI,
   },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 6,
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
+    letterSpacing: 0.3,
   },
   routeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start', // เปลี่ยนเป็น flex-start เพื่อให้เวลา revised ไม่ดัน layout
+    alignItems: 'flex-start',
     marginBottom: 15,
   },
   locationBlock: {
     alignItems: 'center',
     flex: 1,
-    // เพิ่ม minHeight เพื่อให้ layout นิ่งเมื่อมี 2 บรรทัด
-    minHeight: 65, 
+    minHeight: 65,
     justifyContent: 'flex-start',
   },
   codeText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: BENI,
     marginBottom: 4,
   },
-  // Styles สำหรับ TimeDisplay
   timeContainer: {
     alignItems: 'center',
   },
   timeText: {
-    fontSize: 16, // ขนาดเวลาปกติ
+    fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: SUMI,
   },
   revisedTimeText: {
-    color: '#2E7D32', // สีเขียวเข้ม (ตามภาพที่ 2)
-    fontSize: 18,    // ใหญ่ขึ้นเล็กน้อยเพื่อเน้น
+    color: KINCHA,
+    fontSize: 18,
     fontWeight: 'bold',
   },
   scheduledTimeText: {
-    fontSize: 12, // ตัวเล็ก
-    color: '#888', // สีเทา
-    textDecorationLine: 'line-through', // ขีดฆ่า
+    fontSize: 12,
+    color: INK_60,
+    textDecorationLine: 'line-through',
     marginTop: 2,
   },
   dateText: {
     fontSize: 12,
-    color: '#888',
+    color: INK_60,
     marginTop: 4,
   },
   planeIconBlock: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 10,
-    marginTop: 10, // จัดให้อยู่กึ่งกลางแนวตั้งกับ codeText
+    marginTop: 10,
   },
   durationText: {
     fontSize: 12,
-    color: '#ccc',
+    color: WASHI_DARK,
     marginTop: -5,
   },
   divider: {
     height: 1,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: WASHI_DARK,
     marginBottom: 10,
   },
-  // Footer Styles (จากคำตอบก่อนหน้า)
   footerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -496,15 +510,15 @@ const styles = StyleSheet.create({
   },
   verticalDivider: {
     width: 1,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: WASHI_DARK,
     marginHorizontal: 5,
   },
   footerHeader: {
     fontSize: 10,
     fontWeight: 'bold',
-    color: '#aaa',
+    color: KINCHA,
     marginBottom: 4,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   rowInfo: {
     flexDirection: 'row',
@@ -513,13 +527,13 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 12,
-    color: '#666',
+    color: INK_60,
     marginRight: 4,
   },
   infoValue: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#333',
+    color: SUMI,
   },
   pagination: {
     flexDirection: 'row',
@@ -529,7 +543,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#ccc',
+    backgroundColor: WASHI_DARK,
     marginHorizontal: 3,
   }
 });

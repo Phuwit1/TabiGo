@@ -217,6 +217,7 @@ export default function Home() {
   const [allCities, setAllCities]         = useState<string[]>([]);
   const [loadingCities, setLoadingCities] = useState(false);
   const [selectedCities, setSelectedCities] = useState<Set<string>>(new Set());
+  const [appliedCities,  setAppliedCities]  = useState<Set<string>>(new Set());
   const [showCityModal, setShowCityModal] = useState(false);
   const [citySearch, setCitySearch]       = useState('');
   const router = useRouter();
@@ -537,20 +538,20 @@ export default function Home() {
           {/* ── Trip Guides ── */}
           <SectionHeader
             title="Trip Guides"
-            onFilter={() => { setShowCityModal(true); fetchCities(); }}
-            filterActive={selectedCities.size > 0}
-            filterLabel={selectedCities.size === 0 ? 'Filter' : `${selectedCities.size} เมือง`}
+            onFilter={() => { setSelectedCities(new Set(appliedCities)); setShowCityModal(true); fetchCities(); }}
+            filterActive={appliedCities.size > 0}
+            filterLabel={appliedCities.size === 0 ? 'Filter' : `${appliedCities.size} ${appliedCities.size === 1 ? 'city' : 'cities'}`}
           />
 
           {/* Trip cards or empty state */}
           {(() => {
-            const filtered = selectedCities.size === 0
+            const filtered = appliedCities.size === 0
               ? endedTrips
-              : endedTrips.filter(t => selectedCities.has(t.city || 'Japan'));
+              : endedTrips.filter(t => appliedCities.has(t.city || 'Japan'));
             return filtered.length === 0 ? (
               <View style={s.guidesEmpty}>
                 <Ionicons name="map-outline" size={28} color={INK_60} style={{ opacity: 0.4 }} />
-                <Text style={s.guidesEmptyText}>ไม่มีแพลน guide ตอนนี้</Text>
+                <Text style={s.guidesEmptyText}>No guides available</Text>
               </View>
             ) : (
               <ScrollView
@@ -572,14 +573,14 @@ export default function Home() {
             transparent
             onRequestClose={() => setShowCityModal(false)}
           >
-            <View style={s.cityModalBackdrop}>
-              <View style={s.cityModalCard}>
+            <Pressable style={s.cityModalBackdrop} onPress={() => { setSelectedCities(new Set(appliedCities)); setShowCityModal(false); }}>
+              <Pressable style={s.cityModalCard} onPress={e => e.stopPropagation()}>
                 <View style={s.cityModalHandle} />
 
                 {/* Header */}
                 <View style={s.cityModalHeader}>
                   <Text style={s.cityModalTitle}>Filter by City</Text>
-                  <TouchableOpacity onPress={() => setShowCityModal(false)} activeOpacity={0.75}>
+                  <TouchableOpacity onPress={() => { setSelectedCities(new Set(appliedCities)); setShowCityModal(false); }} activeOpacity={0.75}>
                     <Ionicons name="close" size={20} color={SUMI} />
                   </TouchableOpacity>
                 </View>
@@ -602,46 +603,47 @@ export default function Home() {
                   )}
                 </View>
 
-                {/* City list */}
-                {loadingCities ? (
-                  <ActivityIndicator color={BENI} style={{ marginVertical: 40 }} />
-                ) : (
-                  <FlatList
-                    data={allCities.filter(c => c.toLowerCase().includes(citySearch.toLowerCase()))}
-                    keyExtractor={item => item}
-                    keyboardShouldPersistTaps="handled"
-                    style={{ maxHeight: 380 }}
-                    ListEmptyComponent={<Text style={s.cityModalEmpty}>No cities found</Text>}
-                    renderItem={({ item: city }) => {
-                      const checked = selectedCities.has(city);
-                      const tripCount = endedTrips.filter(t => t.city === city).length;
-                      return (
-                        <Pressable
-                          onPress={() => setSelectedCities(prev => {
-                            const n = new Set(prev);
-                            if (n.has(city)) n.delete(city); else n.add(city);
-                            return n;
-                          })}
-                          style={[s.cityModalRow, checked && s.cityModalRowChecked]}
-                        >
-                          <View style={[s.cityModalCheckbox, checked && s.cityModalCheckboxChecked]}>
-                            {checked && <Ionicons name="checkmark" size={14} color={WHITE} />}
-                          </View>
-                          <Text style={[s.cityModalCityName, checked && s.cityModalCityNameChecked]}>
-                            {city}
-                          </Text>
-                          {tripCount > 0 && (
-                            <View style={s.cityModalTripBadge}>
-                              <Text style={s.cityModalTripBadgeText}>{tripCount} trips</Text>
+                {/* City list — flex: 1 ทำให้ list หดตัวและ footer ลอยอยู่ล่างเสมอ */}
+                <View style={s.cityModalListWrap}>
+                  {loadingCities ? (
+                    <ActivityIndicator color={BENI} style={{ marginVertical: 40 }} />
+                  ) : (
+                    <FlatList
+                      data={allCities.filter(c => c.toLowerCase().includes(citySearch.toLowerCase()))}
+                      keyExtractor={item => item}
+                      keyboardShouldPersistTaps="handled"
+                      ListEmptyComponent={<Text style={s.cityModalEmpty}>No cities found</Text>}
+                      renderItem={({ item: city }) => {
+                        const checked = selectedCities.has(city);
+                        const tripCount = endedTrips.filter(t => t.city === city).length;
+                        return (
+                          <Pressable
+                            onPress={() => setSelectedCities(prev => {
+                              const n = new Set(prev);
+                              if (n.has(city)) n.delete(city); else n.add(city);
+                              return n;
+                            })}
+                            style={[s.cityModalRow, checked && s.cityModalRowChecked]}
+                          >
+                            <View style={[s.cityModalCheckbox, checked && s.cityModalCheckboxChecked]}>
+                              {checked && <Ionicons name="checkmark" size={14} color={WHITE} />}
                             </View>
-                          )}
-                        </Pressable>
-                      );
-                    }}
-                  />
-                )}
+                            <Text style={[s.cityModalCityName, checked && s.cityModalCityNameChecked]}>
+                              {city}
+                            </Text>
+                            {tripCount > 0 && (
+                              <View style={s.cityModalTripBadge}>
+                                <Text style={s.cityModalTripBadgeText}>{tripCount} trips</Text>
+                              </View>
+                            )}
+                          </Pressable>
+                        );
+                      }}
+                    />
+                  )}
+                </View>
 
-                {/* Footer */}
+                {/* Footer — อยู่นอก listWrap เพื่อไม่โดน list ดัน */}
                 <View style={s.cityModalFooter}>
                   {selectedCities.size > 0 && (
                     <TouchableOpacity
@@ -654,7 +656,7 @@ export default function Home() {
                   )}
                   <TouchableOpacity
                     style={s.cityModalConfirmBtn}
-                    onPress={() => { setCitySearch(''); setShowCityModal(false); }}
+                    onPress={() => { setAppliedCities(new Set(selectedCities)); setCitySearch(''); setShowCityModal(false); }}
                     activeOpacity={0.85}
                   >
                     <Text style={s.cityModalConfirmText}>
@@ -662,8 +664,8 @@ export default function Home() {
                     </Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            </View>
+              </Pressable>
+            </Pressable>
           </Modal>
           <View style={{ height: 32 }} />
         </View>
@@ -702,7 +704,6 @@ const SeeMoreCard = ({ onPress }: { onPress: () => void }) => (
       <Ionicons name="compass-outline" size={26} color={BENI} />
     </View>
     <Text style={sm.text}>See All</Text>
-    <Text style={sm.kanji}>もっと</Text>
   </TouchableOpacity>
 );
 
@@ -883,6 +884,15 @@ const s = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingBottom: 24,
+    maxHeight: '82%',
+  },
+  cityModalList: {
+    flexShrink: 1,
+    maxHeight: 320,
+  },
+  cityModalListWrap: {
+    flexShrink: 1,
+    maxHeight: 280,
   },
   cityModalHandle: {
     width: 36,

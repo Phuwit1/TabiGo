@@ -179,7 +179,6 @@ const TripCard: React.FC<TripCardProps> = ({
                 <View style={s.joinedPill}>
                   <Ionicons name="people" size={10} color={KINCHA_LIGHT} />
                   <Text style={s.joinedPillText}>Joined</Text>
-                  <Text style={s.joinedPillKanji}>参加</Text>
                 </View>
               </View>
             )}

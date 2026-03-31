@@ -254,7 +254,6 @@ export default function ProfileScreen() {
         <View style={s.guestCircle3} />
 
         {/* Kanji watermark */}
-        <Text style={s.guestKanji}>旅</Text>
 
         {/* Icon */}
         <View style={s.guestIconRing}>
@@ -299,7 +298,6 @@ export default function ProfileScreen() {
         <Text style={s.bannerPetal1}>🌸</Text>
         <Text style={s.bannerPetal2}>🌸</Text>
         {/* Kanji watermark */}
-        <Text style={s.bannerKanji}>プロフィール</Text>
 
         <View style={s.bannerContent}>
           <Text style={s.bannerTagText}>PROFILE ·</Text>

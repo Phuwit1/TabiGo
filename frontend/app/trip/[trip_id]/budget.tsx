@@ -122,6 +122,8 @@ export default function TripBudgetScreen() {
 
   const [isEditing, setIsEditing]               = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
+  const editingOriginalJPY  = useRef<number>(0);
+  const budgetOriginalJPY   = useRef<number>(0);
   const [loading, setLoading]                   = useState(true);
   const [isDeleteMode, setIsDeleteMode]         = useState(false);
   const [isSaving, setIsSaving]                 = useState(false);
@@ -150,8 +152,18 @@ export default function TripBudgetScreen() {
     ).start();
   }, [expenses.length]);
 
+  // ── Recalculate amounts when currency changes ──────────────────────────────
+  useEffect(() => {
+    if (isModalVisible && isEditing) {
+      setAmount(jpyToDisplay(editingOriginalJPY.current));
+    }
+    if (isEditBudgetModalVisible) {
+      setEditBudgetAmount(jpyToDisplay(budgetOriginalJPY.current));
+    }
+  }, [currency]);
+
   // ── Validation ──────────────────────────────────────────────────────────────
-  const isNumericOnly = (v: string) => /^\d+$/.test(v);
+  const isNumericOnly = (v: string) => /^\d+(\.\d+)?$/.test(v);
 
   const handleAmountChange = (text: string) => {
     // Allow decimals for non-JPY currencies
@@ -231,6 +243,7 @@ export default function TripBudgetScreen() {
 
   // ── Modal controls ──────────────────────────────────────────────────────────
   const openEditBudgetModal = () => {
+    budgetOriginalJPY.current = budget?.total_budget ?? 0;
     setEditBudgetAmount(jpyToDisplay(budget?.total_budget ?? 0));
     setFormErrors({});
     setEditBudgetModalVisible(true);
@@ -244,6 +257,7 @@ export default function TripBudgetScreen() {
   };
 
   const openEditExpenseModal = (expense: Expense) => {
+    editingOriginalJPY.current = expense.amount;
     setIsEditing(true);
     setEditingExpenseId(expense.expense_id);
     setAmount(jpyToDisplay(expense.amount));

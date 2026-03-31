@@ -273,6 +273,7 @@ export default function Hometrip() {
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [canEdit, setCanEdit]             = useState(true);
 
+  const [refreshing, setRefreshing]       = useState(false);
   const [activeTab, setActiveTab]         = useState<'itinerary' | 'budget'>('itinerary');
   const [budgetData, setBudgetData]       = useState<any>(null);
   const [expenses, setExpenses]           = useState<any[]>([]);
@@ -298,6 +299,28 @@ export default function Hometrip() {
 
   const dailyRef = useRef<DailyPlanTabsHandle>(null);
   const API_BASE = useMemo(() => `${API_URL}`, []);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const token = await AsyncStorage.getItem('access_token');
+      if (!token) return;
+      const [tripRes, userRes] = await Promise.all([
+        axios.get(`${API_URL}/trip_plan/${trip_id}`, {
+          headers: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache' },
+          params: { t: Date.now() },
+        }),
+        axios.get(`${API_URL}/user`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      setTrip(tripRes.data);
+      setCurrentUserId(userRes.data.customer_id ?? null);
+      setRefreshKey(Date.now());
+      // Reset budget so it re-fetches on next tab visit
+      setBudgetData(null);
+      setExpenses([]);
+    } catch { /* ignore */ }
+    finally { setRefreshing(false); }
+  }, [trip_id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -366,6 +389,8 @@ export default function Hometrip() {
       <TripParallaxScrollView
         headerHeight={320}
         headerBackgroundColor={{ light: SUMI, dark: SUMI }}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
         headerImage={
           <View style={s.headerWrap}>
             {/* Background image */}

@@ -11,8 +11,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import dayjs from 'dayjs';
 import isBetween from 'dayjs/plugin/isBetween';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
 import { BENI, KINCHA, SUMI, WASHI, WASHI_DARK, INK_60 } from '@/constants/theme';
+import { GOOGLE_API_KEY } from '@/api.js';
 
 // Setup dayjs
 dayjs.extend(isBetween);
@@ -135,6 +136,92 @@ function RouteSuggestion({ options }: { options: RouteOption[] }) {
 // ==========================================
 // Main Component: FloatingChat
 // ==========================================
+const buildMapHTML = (apiKey: string) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+    #map { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    let map;
+    let userMarker = null;
+    let destMarker = null;
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: 35.6762, lng: 139.6503 },
+        zoom: 14,
+        disableDefaultUI: true,
+        zoomControl: true,
+      });
+    }
+
+    function setUserMarker(lat, lng) {
+      const pos = { lat: lat, lng: lng };
+      if (!userMarker) {
+        userMarker = new google.maps.Marker({
+          position: pos,
+          map: map,
+          title: 'Your Location',
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 11,
+            fillColor: '#007AFF',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2.5,
+          },
+          zIndex: 10,
+        });
+        const iw = new google.maps.InfoWindow({ content: '<b>You</b>' });
+        userMarker.addListener('click', function() { iw.open(map, userMarker); });
+      } else {
+        userMarker.setPosition(pos);
+      }
+    }
+
+    function setDestMarker(lat, lng, name) {
+      const pos = { lat: lat, lng: lng };
+      if (!destMarker) {
+        destMarker = new google.maps.Marker({
+          position: pos,
+          map: map,
+          title: name,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 11,
+            fillColor: '#C0392B',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2.5,
+          },
+        });
+        const iw = new google.maps.InfoWindow({ content: '<b>' + name + '</b>' });
+        destMarker.addListener('click', function() { iw.open(map, destMarker); });
+      } else {
+        destMarker.setPosition(pos);
+      }
+    }
+
+    function fitBoth(uLat, uLng, dLat, dLng) {
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend({ lat: uLat, lng: uLng });
+      bounds.extend({ lat: dLat, lng: dLng });
+      map.fitBounds(bounds, { top: 40, right: 40, bottom: 40, left: 40 });
+    }
+  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap" async defer></script>
+</body>
+</html>
+`;
+
 export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -142,30 +229,29 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
   const [nextActivity, setNextActivity] = useState<ScheduleItem | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const mapRef = useRef<MapView>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const webViewRef = useRef<WebView>(null);
 
-  // คำนวณ region ที่ครอบทั้ง 2 หมุด
-  const getRegion = () => {
-    if (!userCoords || nextActivity?.lat == null || nextActivity?.lng == null) {
-      return {
-        latitude: userCoords?.latitude ?? 13.7563,
-        longitude: userCoords?.longitude ?? 100.5018,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      };
+  // Inject markers whenever data + map are ready
+  useEffect(() => {
+    if (!mapReady) return;
+    if (userCoords) {
+      webViewRef.current?.injectJavaScript(
+        `setUserMarker(${userCoords.latitude}, ${userCoords.longitude}); true;`
+      );
     }
-    const minLat = Math.min(Number(userCoords.latitude), Number(nextActivity.lat));
-    const maxLat = Math.max(Number(userCoords.latitude), Number(nextActivity.lat));
-    const minLng = Math.min(Number(userCoords.longitude), Number(nextActivity.lng));
-    const maxLng = Math.max(Number(userCoords.longitude), Number(nextActivity.lng));
-    const padding = 1.5;
-    return {
-      latitude: (minLat + maxLat) / 2,
-      longitude: (minLng + maxLng) / 2,
-      latitudeDelta: Math.max((maxLat - minLat) * padding, 0.01),
-      longitudeDelta: Math.max((maxLng - minLng) * padding, 0.01),
-    };
-  };
+    if (nextActivity?.lat != null && nextActivity?.lng != null) {
+      const name = JSON.stringify(nextActivity.specific_location_name || nextActivity.activity);
+      webViewRef.current?.injectJavaScript(
+        `setDestMarker(${nextActivity.lat}, ${nextActivity.lng}, ${name}); true;`
+      );
+    }
+    if (userCoords && nextActivity?.lat != null && nextActivity?.lng != null) {
+      webViewRef.current?.injectJavaScript(
+        `fitBoth(${userCoords.latitude}, ${userCoords.longitude}, ${nextActivity.lat}, ${nextActivity.lng}); true;`
+      );
+    }
+  }, [mapReady, userCoords, nextActivity]);
 
   const handleClose = () => {
     setIsOpen(false);
@@ -344,36 +430,16 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
         <View style={styles.modalRoot}>
           {/* === TOP 50%: MAP === */}
           <View style={styles.mapContainer}>
-            <MapView
-              ref={mapRef}
-              provider={PROVIDER_GOOGLE}
+            <WebView
+              ref={webViewRef}
               style={styles.map}
-              region={getRegion()}
-              showsUserLocation
-              showsMyLocationButton
-            >
-              {userCoords && (
-                <Marker
-                  coordinate={{
-                    latitude: Number(userCoords.latitude),
-                    longitude: Number(userCoords.longitude),
-                  }}
-                  title="ตำแหน่งของคุณ"
-                  pinColor="blue"
-                />
-              )}
-
-              {nextActivity?.lat != null && nextActivity?.lng != null && (
-                <Marker
-                  coordinate={{
-                    latitude: Number(nextActivity.lat),
-                    longitude: Number(nextActivity.lng),
-                  }}
-                  title={nextActivity.specific_location_name || nextActivity.activity}
-                  pinColor="red"
-                />
-              )}
-            </MapView>
+              originWhitelist={['*']}
+              source={{ html: buildMapHTML(GOOGLE_API_KEY) }}
+              javaScriptEnabled
+              domStorageEnabled
+              onLoadEnd={() => setMapReady(true)}
+              mixedContentMode="always"
+            />
 
             {!userCoords && (
               <View style={[styles.mapPlaceholder, StyleSheet.absoluteFillObject]}>

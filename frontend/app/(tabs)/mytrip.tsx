@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, FlatList, StyleSheet,
-  TouchableOpacity, Animated,
+  TouchableOpacity, Animated, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import TripCard from '@/components/ui/trip/cardtrip';
@@ -29,6 +29,7 @@ type Trip = {
   creator_id: number;
   start_plan_date: string;
   end_plan_date: string;
+  createdAt?: string;
   tripGroup?: { members: any[] } | null;
   image?: string;
 };
@@ -124,7 +125,6 @@ const GuestScreen = ({ router }: { router: any }) => (
     <View style={s.guestCircle2} />
     <View style={s.guestCircle3} />
     {/* Kanji watermark */}
-    <Text style={s.guestKanji}>旅</Text>
 
     {/* Icon */}
     <View style={s.guestIconRing}>
@@ -167,6 +167,7 @@ export default function TripListScreen() {
   const [isDeleteMode, setIsDeleteMode]   = useState(false);
   const [isGuest, setIsGuest]             = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
+  const [refreshing, setRefreshing]       = useState(false);
   const router = useRouter();
 
   const searchAnim = useRef(new Animated.Value(0)).current;
@@ -178,42 +179,43 @@ export default function TripListScreen() {
   };
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
+  const fetchTrips = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('access_token');
+      if (!token) { setIsGuest(true); setLoading(false); return; }
+      setIsGuest(false);
+      const [userRes, tripsRes] = await Promise.allSettled([
+        axios.get(`${API_URL}/user`,      { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_URL}/trip_plan`, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }),
+      ]);
+      if (userRes.status === 'fulfilled') setCurrentUser(userRes.value.data);
+      if (tripsRes.status === 'rejected') throw tripsRes.reason;
+      setTrips(Array.isArray(tripsRes.value.data) ? tripsRes.value.data : []);
+    } catch (err: any) {
+      try {
+        const offlineTrips = await db.getAllAsync('SELECT * FROM TripPlan');
+        if (Array.isArray(offlineTrips) && offlineTrips.length > 0) {
+          setTrips(offlineTrips as Trip[]);
+          setError('');
+        } else {
+          setError('Unable to load trips. No offline data available.');
+        }
+      } catch {
+        setError('An error occurred while loading trips.');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [db]);
+
   useFocusEffect(
     useCallback(() => {
-      const fetchTrips = async () => {
-        setLoading(true);
-        try {
-          const token = await AsyncStorage.getItem('access_token');
-          if (!token) { setIsGuest(true); setLoading(false); return; }
-          setIsGuest(false);
-          const [userRes, tripsRes] = await Promise.allSettled([
-            axios.get(`${API_URL}/user`,      { headers: { Authorization: `Bearer ${token}` } }),
-            axios.get(`${API_URL}/trip_plan`, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }),
-          ]);
-
-          if (userRes.status === 'fulfilled') setCurrentUser(userRes.value.data);
-          if (tripsRes.status === 'rejected') throw tripsRes.reason;
-          setTrips(Array.isArray(tripsRes.value.data) ? tripsRes.value.data : []);
-        } catch (err: any) {
-          try {
-            const offlineTrips = await db.getAllAsync('SELECT * FROM TripPlan');
-            if (Array.isArray(offlineTrips) && offlineTrips.length > 0) {
-              setTrips(offlineTrips as Trip[]);
-              setError('');
-            } else {
-              setError('Unable to load trips. No offline data available.');
-            }
-          } catch {
-            setError('An error occurred while loading trips.');
-          }
-        } finally {
-          setLoading(false);
-        }
-      };
-
       fetchTrips();
       return () => setIsDeleteMode(false);
-    }, [])
+    }, [fetchTrips])
   );
 
   // ── Delete ─────────────────────────────────────────────────────────────────
@@ -255,7 +257,17 @@ export default function TripListScreen() {
   if (isGuest) return <GuestScreen router={router} />;
 
   const filteredTrips = Array.isArray(trips)
-    ? trips.filter(t => t.name_group?.toLowerCase().includes(search.toLowerCase()))
+    ? trips
+        .filter(t => t.name_group?.toLowerCase().includes(search.toLowerCase()))
+        .sort((a, b) => {
+          const statusOrder = { 'On Trip': 0, 'Upcoming': 1, 'Trip Ended': 2 };
+          const statusA = statusOrder[getStatus(a.start_plan_date, a.end_plan_date)];
+          const statusB = statusOrder[getStatus(b.start_plan_date, b.end_plan_date)];
+          if (statusA !== statusB) return statusA - statusB;
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : a.plan_id;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : b.plan_id;
+          return dateB - dateA;
+        })
     : [];
 
   const renderItem = ({ item }: { item: Trip }) => {
@@ -418,6 +430,14 @@ export default function TripListScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 100 }}
             ListEmptyComponent={<EmptyTripState router={router} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => fetchTrips(true)}
+                colors={[BENI]}
+                tintColor={BENI}
+              />
+            }
           />
         )}
       </View>

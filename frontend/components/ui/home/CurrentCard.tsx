@@ -37,10 +37,10 @@ type Trip = {
 
 type TripStatus = 'On Trip' | 'Upcoming' | 'Ended';
 
-const STATUS_CONFIG: Record<TripStatus, { color: string; bg: string; border: string; icon: string; kanji: string }> = {
-  'On Trip':  { color: KINCHA_LIGHT, bg: 'rgba(184,150,62,0.12)', border: KINCHA,     icon: 'airplane',        kanji: '旅中' },
-  'Upcoming': { color: BENI,         bg: 'rgba(192,57,43,0.08)',  border: BENI,        icon: 'time-outline',    kanji: '予定' },
-  'Ended':    { color: INK_60,       bg: INK_20,                  border: INK_20,      icon: 'checkmark-circle',kanji: '完'   },
+const STATUS_CONFIG: Record<TripStatus, { color: string; bg: string; border: string; icon: string; label: string }> = {
+  'On Trip':  { color: KINCHA_LIGHT, bg: 'rgba(184,150,62,0.12)', border: KINCHA,     icon: 'airplane',        label: 'NOW'  },
+  'Upcoming': { color: BENI,         bg: 'rgba(192,57,43,0.08)',  border: BENI,        icon: 'time-outline',    label: 'SOON' },
+  'Ended':    { color: INK_60,       bg: INK_20,                  border: INK_20,      icon: 'checkmark-circle',label: 'DONE' },
 };
 
 export default function CurrentCard() {
@@ -189,7 +189,7 @@ export default function CurrentCard() {
             <View style={[s.statusBadge, { backgroundColor: cfg.bg, borderColor: cfg.border + '55' }]}>
               <Ionicons name={cfg.icon as any} size={10} color={cfg.color} />
               <Text style={[s.statusText, { color: cfg.color }]}>{status}</Text>
-              <Text style={[s.statusKanji, { color: cfg.color }]}>{cfg.kanji}</Text>
+              <Text style={[s.statusKanji, { color: cfg.color }]}>{cfg.label}</Text>
             </View>
 
             {/* New trip button when ended */}

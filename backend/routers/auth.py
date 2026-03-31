@@ -14,7 +14,7 @@ import os
 
 router = APIRouter(tags=["Auth"])
 
-GOOGLE_CLIENT_ID = "1061030412176-tmtkq6rgmr4biqpr8ir1sk902od0mu1e.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = "1027287817106-us5ausutbq2hqp4sofsdvc0d3gjacfra.apps.googleusercontent.com"
 
 @router.post("/refresh-token", response_model=CustomerOut)
 async def refresh_token(data: TokenRefreshRequest, db: Prisma = Depends(get_db)):
