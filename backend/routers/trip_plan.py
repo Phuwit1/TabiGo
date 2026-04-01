@@ -137,7 +137,7 @@ async def duplicate_trip_plan(
     if not source:
         raise HTTPException(status_code=404, detail="Source trip plan not found")
 
-    duration_days = (source.end_plan_date.date() - source.start_plan_date.date()).days
+    duration_days = max(0, source.day_of_trip - 1)
     new_start = body.start_plan_date.replace(hour=0, minute=0, second=0, microsecond=0)
     new_end = new_start + timedelta(days=duration_days)
     resolved_image = body.image if body.image is not None else source.image

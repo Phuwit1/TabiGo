@@ -65,7 +65,7 @@ function RouteSuggestion({ options }: { options: RouteOption[] }) {
       {/* Header */}
       <View style={routeStyles.headerRow}>
         <View style={routeStyles.headerAccent} />
-        <Text style={routeStyles.headerTitle}>เส้นทางที่แนะนำ</Text>
+        <Text style={routeStyles.headerTitle}>Suggested Routes</Text>
       </View>
 
       {/* Tab strip */}
@@ -336,12 +336,12 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
       // 1. ขอ Permission และหาตำแหน่งปัจจุบัน
       const servicesEnabled = await Location.hasServicesEnabledAsync();
       if (!servicesEnabled) {
-        throw new Error('กรุณาเปิด Location Services บนอุปกรณ์ก่อนใช้งาน');
+        throw new Error('Please enable Location Services on your device.');
       }
 
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        throw new Error('ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง กรุณาอนุญาตใน Settings');
+        throw new Error('Location permission denied. Please allow access in Settings.');
       }
 
       let currentLocation;
@@ -355,7 +355,7 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
         if (lastKnown) {
           currentLocation = lastKnown;
         } else {
-          throw new Error('ไม่สามารถระบุตำแหน่งได้ กรุณาเปิด GPS แล้วลองใหม่');
+          throw new Error('Unable to determine location. Please enable GPS and try again.');
         }
       }
 
@@ -374,14 +374,14 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
 
       const itineraryData = res.data?.payload?.itinerary;
       if (!itineraryData || !Array.isArray(itineraryData)) {
-        throw new Error('ไม่พบข้อมูลตารางการเดินทาง');
+        throw new Error('No itinerary data found.');
       }
 
       // 3. หา Destination (กิจกรรมถัดไปที่มี Location)
       const target = findNextLocation(itineraryData);
 
       if (!target) {
-        throw new Error('ไม่พบกิจกรรมถัดไปที่มีสถานที่ระบุไว้');
+        throw new Error('No upcoming activity with a location found.');
       }
 
       console.log('[MAP] target found:', target.activity, target.lat, target.lng);
@@ -405,7 +405,7 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
       );
 
       if (!routeRawRes.data || routeRawRes.data.error) {
-        throw new Error('ไม่พบเส้นทาง หรือ API มีปัญหา');
+        throw new Error('Route not found or API error.');
       }
 
       // 5. ส่งผลลัพธ์ที่ได้ไปให้ AI สรุป (POST /route/summarize)
@@ -418,7 +418,7 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
 
     } catch (err: any) {
       console.error("Route Error:", err.response?.data || err.message || err);
-      setErrorMsg(err.message || "เกิดข้อผิดพลาดในการคำนวณเส้นทาง");
+      setErrorMsg(err.message || 'An error occurred while calculating the route.');
     } finally {
       setLoading(false);
     }
@@ -444,7 +444,7 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
             {!userCoords && (
               <View style={[styles.mapPlaceholder, StyleSheet.absoluteFillObject]}>
                 <ActivityIndicator size="large" color={BENI} />
-                <Text style={styles.mapPlaceholderText}>กำลังโหลดแผนที่...</Text>
+                <Text style={styles.mapPlaceholderText}>Loading map...</Text>
               </View>
             )}
 
@@ -463,7 +463,7 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
             {loading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="small" color={BENI} />
-                <Text style={styles.loadingText}>กำลังค้นหาพิกัดและคำนวณเส้นทาง...</Text>
+                <Text style={styles.loadingText}>Finding location and calculating route...</Text>
               </View>
             ) : errorMsg ? (
               <View style={styles.errorContainer}>
@@ -472,7 +472,7 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
             ) : routeInfo && nextActivity ? (
               <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
                 <View style={styles.destinationBox}>
-                  <Text style={styles.targetLabel}>ปลายทาง</Text>
+                  <Text style={styles.targetLabel}>Destination</Text>
                   <Text style={styles.targetName} numberOfLines={2}>
                     {nextActivity.specific_location_name || nextActivity.activity}
                   </Text>
@@ -482,12 +482,12 @@ export default function FloatingChat({ planId, apiBaseUrl }: FloatingChatProps) 
                 {Array.isArray(routeInfo) && routeInfo.length > 0 ? (
                   <RouteSuggestion options={routeInfo} />
                 ) : (
-                  <Text style={styles.infoText}>ไม่พบข้อมูลเส้นทาง</Text>
+                  <Text style={styles.infoText}>No route information available.</Text>
                 )}
               </ScrollView>
             ) : (
               <View style={styles.emptyContainer}>
-                <Text style={styles.infoText}>ไม่พบกิจกรรมถัดไปที่ต้องเดินทาง</Text>
+                <Text style={styles.infoText}>No upcoming activity that requires travel.</Text>
               </View>
             )}
           </View>

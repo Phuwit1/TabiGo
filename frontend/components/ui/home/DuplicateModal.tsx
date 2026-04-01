@@ -54,7 +54,7 @@ export default function DuplicateModal({ visible, trip, onClose, onSuccess }: Pr
   }, [visible]);
 
   // Real-time computed end date — no state needed
-  const durationDays = dayjs(trip.end_plan_date).diff(dayjs(trip.start_plan_date), 'day');
+  const durationDays = Math.max(0, trip.day_of_trip - 1);
   const computedEnd  = dayjs(startDate).add(durationDays, 'day').format('DD MMM YYYY');
 
   const pickImage = async () => {
@@ -92,7 +92,7 @@ export default function DuplicateModal({ visible, trip, onClose, onSuccess }: Pr
   const validate = (): boolean => {
     let valid = true;
     if (!name.trim()) {
-      setNameError('กรุณากรอกชื่อทริป');
+      setNameError('Please enter a trip name');
       valid = false;
     } else {
       setNameError('');
@@ -100,7 +100,7 @@ export default function DuplicateModal({ visible, trip, onClose, onSuccess }: Pr
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (startDate < today) {
-      setDateError('วันเริ่มต้องไม่อยู่ในอดีต');
+      setDateError('Start date cannot be in the past');
       valid = false;
     } else {
       setDateError('');
@@ -138,7 +138,7 @@ export default function DuplicateModal({ visible, trip, onClose, onSuccess }: Pr
 
       onSuccess(res.data.plan_id);
     } catch {
-      setNameError('เกิดข้อผิดพลาด กรุณาลองใหม่');
+      setNameError('Something went wrong. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -176,12 +176,12 @@ export default function DuplicateModal({ visible, trip, onClose, onSuccess }: Pr
           >
             {/* Trip Name */}
             <View style={d.fieldGroup}>
-              <Text style={d.label}>ชื่อทริป</Text>
+              <Text style={d.label}>Trip Name</Text>
               <TextInput
                 style={[d.input, !!nameError && d.inputError]}
                 value={name}
                 onChangeText={t => { setName(t); if (t.trim()) setNameError(''); }}
-                placeholder="ตั้งชื่อทริปใหม่"
+                placeholder="Enter new trip name"
                 placeholderTextColor={INK_60}
               />
               {!!nameError && <Text style={d.errorText}>{nameError}</Text>}
@@ -189,17 +189,17 @@ export default function DuplicateModal({ visible, trip, onClose, onSuccess }: Pr
 
             {/* Cover Image */}
             <View style={d.fieldGroup}>
-              <Text style={d.label}>ภาพปก</Text>
+              <Text style={d.label}>Cover Image</Text>
               <Image source={previewSrc} style={d.imagePreview} resizeMode="cover" />
               <TouchableOpacity style={d.changeImgBtn} onPress={pickImage} activeOpacity={0.75}>
                 <Ionicons name="camera-outline" size={14} color={KINCHA} />
-                <Text style={d.changeImgText}>เปลี่ยนรูป</Text>
+                <Text style={d.changeImgText}>Change Photo</Text>
               </TouchableOpacity>
             </View>
 
             {/* Start Date */}
             <View style={d.fieldGroup}>
-              <Text style={d.label}>วันเริ่มต้น</Text>
+              <Text style={d.label}>Start Date</Text>
               <TouchableOpacity
                 style={[d.dateRow, !!dateError && d.inputError]}
                 onPress={() => setShowPicker(true)}
@@ -225,7 +225,7 @@ export default function DuplicateModal({ visible, trip, onClose, onSuccess }: Pr
 
             {/* End Date — READ-ONLY */}
             <View style={d.fieldGroup}>
-              <Text style={d.label}>วันสิ้นสุด (คำนวณอัตโนมัติ)</Text>
+              <Text style={d.label}>End Date (Auto-calculated)</Text>
               <View style={[d.dateRow, d.dateRowReadOnly]}>
                 <Text style={[d.dateText, d.dateTextReadOnly]}>{computedEnd}</Text>
                 <Ionicons name="lock-closed-outline" size={14} color={INK_60} />
@@ -246,7 +246,7 @@ export default function DuplicateModal({ visible, trip, onClose, onSuccess }: Pr
               ) : (
                 <>
                   <Ionicons name="copy-outline" size={17} color={WHITE} />
-                  <Text style={d.saveBtnText}>บันทึก</Text>
+                  <Text style={d.saveBtnText}>Save</Text>
                 </>
               )}
             </TouchableOpacity>

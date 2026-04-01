@@ -31,7 +31,6 @@ export default function EditSchedule() {
 
   const [loading, setLoading]                   = useState(true);
   const [selectedDayIndex, setSelectedDayIndex] = useState(dayIndex ? parseInt(dayIndex as string) : 0);
-  const [schedule, setSchedule]                 = useState<any>(null);
   const [editedSchedule, setEditedSchedule]     = useState<any>(null);
   const [saving, setSaving]                     = useState(false);
   const [isSearchVisible, setIsSearchVisible]   = useState(false);
@@ -47,6 +46,7 @@ export default function EditSchedule() {
   const [addTime, setAddTime]                   = useState('09:00');
   const [showAddTimePicker, setShowAddTimePicker] = useState(false);
   const [canEdit, setCanEdit]                   = useState(true); // default true to avoid flicker
+  const [planStartDate, setPlanStartDate]       = useState<string>('');
 
   const showCustomAlert = (title: string, message: string, isSuccess = false, onConfirm = () => {}) => {
     Alert.alert(title, message, [{ text: 'OK', onPress: onConfirm }]);
@@ -67,8 +67,8 @@ export default function EditSchedule() {
             axios.get(`${API_URL}/user`, { headers }),
           ]);
           const payload = schedRes.data?.payload;
-          setSchedule(payload);
           setEditedSchedule(JSON.parse(JSON.stringify(payload)));
+          setPlanStartDate(planRes.data?.start_plan_date ?? '');
           const isCreator = planRes.data?.creator_id === userRes.data?.customer_id;
           if (isCreator) {
             setCanEdit(true);
@@ -326,10 +326,11 @@ export default function EditSchedule() {
       await axios.put(`${API_URL}/trip_schedule/${planId}`, { plan_id: planId, payload: editedSchedule }, { headers });
       const itinerary = editedSchedule.itinerary;
       if (itinerary?.length > 0) {
-        const newEndDate = itinerary[itinerary.length - 1].date;
+        const numDays = itinerary.length;
+        const newEndDate = dayjs(planStartDate).add(numDays - 1, 'day').format('YYYY-MM-DD');
         await axios.put(`${API_URL}/trip_plan/${planId}`, {
-          end_plan_date: dayjs(newEndDate).format('YYYY-MM-DD'),
-          day_of_trip: dayjs(newEndDate).diff(dayjs(schedule.start_plan_date), 'day') + 1,
+          end_plan_date: newEndDate,
+          day_of_trip: numDays,
         }, { headers });
       }
       showCustomAlert('Saved!', 'Your schedule has been updated.', true, () => router.back());

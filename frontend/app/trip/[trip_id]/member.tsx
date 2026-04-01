@@ -43,6 +43,10 @@ export default function MemberScreen() {
   const [kickTarget, setKickTarget]         = useState<{ id: number; name: string } | null>(null);
   const [kickLoading, setKickLoading]       = useState(false);
 
+  // ── Create group ─────────────────────────────────────────────────────────
+  const [creatingGroup, setCreatingGroup]   = useState(false);
+  const [planCreatorId, setPlanCreatorId]   = useState<number | null>(null);
+
   const fetchData = useCallback(async (isRefresh = false) => {
     try {
       if (!isRefresh) setLoading(true);
@@ -55,6 +59,7 @@ export default function MemberScreen() {
       ]);
       setCurrentUserEmail(userRes.data.email);
       setUser(userRes.data);
+      setPlanCreatorId(planRes.data.creator_id ?? null);
       const realTripId = planRes.data.trip_id;
 
       if (realTripId) {
@@ -164,7 +169,23 @@ export default function MemberScreen() {
     ]);
   };
 
-  const isOwner = tripGroup?.owner?.email === currentUserEmail;
+  const isOwner   = tripGroup?.owner?.email === currentUserEmail;
+  const isCreator = user?.customer_id === planCreatorId;
+
+  const handleCreateGroup = async () => {
+    setCreatingGroup(true);
+    try {
+      const token = await AsyncStorage.getItem('access_token');
+      await axios.post(`${API_URL}/trip_group/create_from_plan/${trip_id}`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await fetchData();
+    } catch {
+      Alert.alert('Error', 'Failed to create group');
+    } finally {
+      setCreatingGroup(false);
+    }
+  };
   const insets = useSafeAreaInsets();
 
   // ─── Member card ────────────────────────────────────────────────────────────
@@ -282,8 +303,36 @@ export default function MemberScreen() {
         }
         ListHeaderComponent={
           <>
-            {/* ── Invite code card ── */}
-            {tripGroup && (
+            {/* ── Invite code card / Create group ── */}
+            {!tripGroup ? (
+              isCreator ? (
+                <View style={s.createGroupCard}>
+                  <View style={s.createGroupLeft}>
+                    <Ionicons name="people-circle-outline" size={28} color={KINCHA} />
+                    <View>
+                      <Text style={s.createGroupTitle}>No group yet</Text>
+                      <Text style={s.createGroupSub}>Create a group to invite others</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[s.createGroupBtn, creatingGroup && { opacity: 0.6 }]}
+                    onPress={handleCreateGroup}
+                    disabled={creatingGroup}
+                    activeOpacity={0.85}
+                  >
+                    {creatingGroup
+                      ? <ActivityIndicator size="small" color={WASHI} />
+                      : <Text style={s.createGroupBtnText}>Create Group</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={s.noGroupCard}>
+                  <Ionicons name="people-outline" size={20} color={INK_60} />
+                  <Text style={s.noGroupText}>No group has been created for this trip yet.</Text>
+                </View>
+              )
+            ) : (
               <View style={s.inviteCard}>
                 <View style={s.inviteLeft}>
                   <Text style={s.inviteLabel}>INVITE CODE</Text>
@@ -531,6 +580,28 @@ const s = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99,
   },
   shareBtnText: { fontSize: 11, fontFamily: 'NotoSansJP_700Bold', color: KINCHA },
+
+  // Create group card
+  createGroupCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(184,150,62,0.08)', borderRadius: 12, padding: 14,
+    marginBottom: 8, borderWidth: 1, borderColor: 'rgba(184,150,62,0.4)',
+  },
+  createGroupLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  createGroupTitle: { fontSize: 13, fontFamily: 'NotoSansJP_700Bold', color: SUMI },
+  createGroupSub: { fontSize: 10, fontFamily: 'NotoSansJP_400Regular', color: INK_60, marginTop: 2 },
+  createGroupBtn: {
+    backgroundColor: KINCHA, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 99, minWidth: 90, alignItems: 'center',
+  },
+  createGroupBtnText: { fontSize: 12, fontFamily: 'NotoSansJP_700Bold', color: WASHI },
+
+  // No group info card
+  noGroupCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: WASHI_DARK, borderRadius: 10, padding: 12, marginBottom: 8,
+  },
+  noGroupText: { fontSize: 12, fontFamily: 'NotoSansJP_400Regular', color: INK_60, flex: 1 },
 
   // Map button
   mapBtn: {
